@@ -7,366 +7,853 @@ import android.net.Uri
 import android.os.BatteryManager
 import android.provider.Settings
 import kotlin.math.max
+import kotlin.math.min
 
 object CommandRouter {
 
     enum class ResultType {
         EXECUTED,
-        CLARIFICATION,
-        UNKNOWN
+        UNKNOWN,
+        AMBIGUOUS,
+        CLARIFICATION
     }
 
-    data class Result(
+    data class CommandResult(
         val type: ResultType,
-        val message: String
+        val response: String,
+        val options: List<String> = emptyList()
     )
 
     private data class Command(
         val id: String,
+        val label: String,
         val aliases: List<String>,
-        val execute: (Context) -> String
+        val action: (Context) -> String
     )
 
-    private data class Candidate(
-        val command: Command,
-        val score: Double
-    )
+    // ------------------------------------------------------------
+    // NORMALIZÁLÁS
+    // ------------------------------------------------------------
 
-    /*
-     * Rengeteg természetes magyar megfogalmazást generálunk.
-     */
-    private val starters = listOf(
-        "",
-        "nyisd meg",
-        "nyisd ki",
-        "inditsd el",
-        "inditsd",
-        "nyisd",
-        "mutasd",
-        "mutasd meg",
-        "menj",
-        "menjunk",
-        "lepj be",
-        "nyisd meg nekem",
-        "nyisd ki nekem",
-        "inditsd el nekem",
-        "mutasd nekem",
-        "hozd elo",
-        "hozd fel",
-        "szeretnem megnyitni",
-        "szeretnem megnezni",
-        "meg tudod nyitni",
-        "megnyitnad",
-        "inditsd nekem",
-        "inditsd el nekem"
-    )
-
-    private val fillers = listOf(
-        "",
-        "a",
-        "az",
-        "nekem",
-        "legyszi",
-        "kerlek",
-        "most",
-        "gyorsan",
-        "mar",
-        "kerlek szepen"
-    )
-
-    private fun normalize(text: String): String {
-        return MainActivity.normalize(text)
+    private fun normalize(input: String): String {
+        return MainActivity.normalize(input)
+            .replace("alkalmazás", "app")
+            .replace("alkalmazast", "app")
+            .replace("alkalmazas", "app")
+            .replace("programot", "program")
+            .replace("program", "app")
+            .replace(Regex("\\s+"), " ")
+            .trim()
     }
 
-    /*
-     * Egy aliasból rengeteg lehetséges mondat készül.
-     */
-    private fun generatedPhrases(
-        vararg aliases: String
-    ): List<String> {
+    private fun words(text: String): List<String> =
+        normalize(text)
+            .split(" ")
+            .filter { it.length >= 2 }
 
+    // ------------------------------------------------------------
+    // FUZZY MATCHING
+    // ------------------------------------------------------------
+
+    private fun levenshtein(a: String, b: String): Int {
+        if (a == b) return 0
+        if (a.isEmpty()) return b.length
+        if (b.isEmpty()) return a.length
+
+        var previous = IntArray(b.length + 1) { it }
+
+        for (i in a.indices) {
+            val current = IntArray(b.length + 1)
+            current[0] = i + 1
+
+            for (j in b.indices) {
+                val cost = if (a[i] == b[j]) 0 else 1
+
+                current[j + 1] = min(
+                    min(
+                        current[j] + 1,
+                        previous[j + 1] + 1
+                    ),
+                    previous[j] + cost
+                )
+            }
+
+            previous = current
+        }
+
+        return previous[b.length]
+    }
+
+    private fun fuzzySimilarity(a: String, b: String): Double {
+        val aa = normalize(a)
+        val bb = normalize(b)
+
+        if (aa.isEmpty() || bb.isEmpty()) return 0.0
+        if (aa == bb) return 1.0
+
+        val distance = levenshtein(aa, bb)
+        val longest = max(aa.length, bb.length)
+
+        return 1.0 - distance.toDouble() / longest.toDouble()
+    }
+
+    private fun tokenSimilarity(input: String, alias: String): Double {
+        val inputWords = words(input)
+        val aliasWords = words(alias)
+
+        if (inputWords.isEmpty() || aliasWords.isEmpty()) {
+            return fuzzySimilarity(input, alias)
+        }
+
+        var total = 0.0
+        var matched = 0
+
+        for (aliasWord in aliasWords) {
+            var best = 0.0
+
+            for (inputWord in inputWords) {
+                best = max(best, fuzzySimilarity(inputWord, aliasWord))
+            }
+
+            total += best
+            if (best >= 0.55) matched++
+        }
+
+        val average = total / aliasWords.size
+        val coverage = matched.toDouble() / aliasWords.size
+
+        return average * 0.7 + coverage * 0.3
+    }
+
+    private fun commandSimilarity(input: String, alias: String): Double {
+        val normalizedInput = normalize(input)
+        val normalizedAlias = normalize(alias)
+
+        if (normalizedInput.contains(normalizedAlias)) {
+            return 1.0
+        }
+
+        if (normalizedAlias.contains(normalizedInput) &&
+            normalizedInput.length >= 3
+        ) {
+            return 0.92
+        }
+
+        return max(
+            fuzzySimilarity(normalizedInput, normalizedAlias),
+            tokenSimilarity(normalizedInput, normalizedAlias)
+        )
+    }
+
+    // ------------------------------------------------------------
+    // ALIAS GENERÁTOR
+    // ------------------------------------------------------------
+
+    private fun aliases(
+        vararg names: String
+    ): List<String> {
         val result = mutableSetOf<String>()
 
-        for (aliasRaw in aliases) {
+        val starters = listOf(
+            "",
+            "nyisd meg",
+            "nyisd ki",
+            "inditsd el",
+            "inditsd",
+            "nyisd fel",
+            "menj ide",
+            "menjunk ide",
+            "vigyel ide",
+            "mutasd",
+            "hozd elo",
+            "kapcsold be",
+            "nyisd meg nekem",
+            "nyisd ki nekem",
+            "menj a",
+            "ugorj a",
+            "inditsd el a",
+            "nyisd meg a",
+            "nyisd ki a"
+        )
 
-            val alias = normalize(aliasRaw)
-
-            result += alias
+        for (name in names) {
+            result += name
 
             for (starter in starters) {
-
-                for (filler in fillers) {
-
-                    val phrase =
-                        listOf(
-                            starter,
-                            filler,
-                            alias
-                        )
-                            .filter { it.isNotBlank() }
-                            .joinToString(" ")
-
-                    if (phrase.isNotBlank()) {
-                        result += phrase
-                    }
+                if (starter.isBlank()) {
+                    result += name
+                } else {
+                    result += "$starter $name"
                 }
             }
+
+            result += "$name app"
+            result += "$name alkalmazas"
+            result += "$name program"
         }
 
         return result.toList()
+    }
+
+    // ------------------------------------------------------------
+    // APP INDÍTÁS
+    // ------------------------------------------------------------
+
+    private fun openApp(
+        packageName: String,
+        label: String
+    ): (Context) -> String = { context ->
+
+        val intent = context.packageManager
+            .getLaunchIntentForPackage(packageName)
+
+        if (intent == null) {
+            "$label nincs telepítve ezen a telefonon."
+        } else {
+            try {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(intent)
+                "Megnyitom a $label alkalmazást."
+            } catch (_: Exception) {
+                "Nem sikerült megnyitnom a $label alkalmazást."
+            }
+        }
     }
 
     private fun openSettings(
         action: String,
         message: String
     ): (Context) -> String = { context ->
-
-        launch(
-            context,
-            Intent(action)
-        )
-
-        message
-    }
-
-    private fun launch(
-        context: Context,
-        intent: Intent
-    ) {
-
         try {
-
-            intent.addFlags(
-                Intent.FLAG_ACTIVITY_NEW_TASK
-            )
-
+            val intent = Intent(action)
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(intent)
-
+            message
         } catch (_: Exception) {
-
             try {
-
                 context.startActivity(
                     Intent(Settings.ACTION_SETTINGS)
-                        .addFlags(
-                            Intent.FLAG_ACTIVITY_NEW_TASK
-                        )
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 )
-
+                "A kért beállítás nem érhető el, ezért megnyitottam a rendszerbeállításokat."
             } catch (_: Exception) {
+                "Nem sikerült megnyitnom a beállításokat."
             }
         }
     }
 
-    private fun app(
-        id: String,
-        label: String,
-        packageName: String,
-        vararg aliases: String
-    ): Command {
-
-        return Command(
-            id = id,
-            aliases =
-                generatedPhrases(
-                    label,
-                    *aliases
-                )
-        ) { context ->
-
-            val intent =
-                context.packageManager
-                    .getLaunchIntentForPackage(
-                        packageName
-                    )
-
-            if (intent != null) {
-
-                launch(
-                    context,
-                    intent
-                )
-
-                "Megnyitom: $label."
-
-            } else {
-
-                "A(z) $label alkalmazás nincs telepítve."
-            }
-        }
-    }
+    // ------------------------------------------------------------
+    // PARANCSOK
+    // ------------------------------------------------------------
 
     private val commands: List<Command> = listOf(
 
-        // =========================
-        // RENDSZER
-        // =========================
+        // ==================== WIFI ====================
 
         Command(
             "wifi",
-            generatedPhrases(
+            "Wi-Fi",
+            aliases(
                 "wifi",
                 "wi fi",
-                "wif i",
+                "wifit",
+                "wi fit",
+                "wifi beallitas",
+                "wifi beallitasok",
                 "vezetek nelkuli halozat",
-                "vezetek nelkuli kapcsolat",
-                "wifi beallitasok"
-            )
-        ) {
+                "vezetek nelkuli internet",
+                "internet wifi",
+                "wifi kapcsolat",
+                "wifit nyisd meg",
+                "wifi menü",
+                "wifi menu"
+            ),
             openSettings(
                 Settings.ACTION_WIFI_SETTINGS,
                 "Megnyitom a Wi-Fi beállításokat."
-            )(it)
-        },
+            )
+        ),
+
+        // ==================== BLUETOOTH ====================
 
         Command(
             "bluetooth",
-            generatedPhrases(
+            "Bluetooth",
+            aliases(
                 "bluetooth",
-                "blu tooth",
+                "blutoth",
+                "blutooth",
+                "blu tut",
+                "bluetooth beallitas",
                 "bluetooth beallitasok",
-                "bluetooth kapcsolat"
-            )
-        ) {
+                "bluetooth kapcsolat",
+                "bluetooth menu",
+                "bluetooth menü"
+            ),
             openSettings(
                 Settings.ACTION_BLUETOOTH_SETTINGS,
                 "Megnyitom a Bluetooth beállításokat."
-            )(it)
-        },
-
-        Command(
-            "mobilhalozat",
-            generatedPhrases(
-                "mobilhalozat",
-                "mobil halozat",
-                "mobilnet",
-                "mobil internet",
-                "sim",
-                "sim beallitasok",
-                "mobil adat"
             )
-        ) {
-            openSettings(
-                Settings.ACTION_NETWORK_OPERATOR_SETTINGS,
-                "Megnyitom a mobilhálózati beállításokat."
-            )(it)
-        },
+        ),
+
+        // ==================== KIJELZŐ ====================
 
         Command(
-            "kijelzo",
-            generatedPhrases(
+            "display",
+            "kijelző",
+            aliases(
                 "kijelzo",
-                "kepernyo",
-                "kepernyo beallitasok",
+                "kijelzo beallitas",
                 "kijelzo beallitasok",
-                "display"
-            )
-        ) {
+                "kepernyo",
+                "kepernyo beallitas",
+                "kepernyo beallitasok",
+                "display",
+                "display settings",
+                "monitor",
+                "fenyero",
+                "fenyero beallitas",
+                "vilagossag"
+            ),
             openSettings(
                 Settings.ACTION_DISPLAY_SETTINGS,
                 "Megnyitom a kijelző beállításait."
-            )(it)
-        },
-
-        Command(
-            "ertesitesek",
-            generatedPhrases(
-                "ertesitesek",
-                "ertesitesi beallitasok",
-                "ertesites",
-                "jelzesek",
-                "ertesitesi beallitas"
             )
-        ) {
-            openSettings(
-                "android.settings.NOTIFICATION_SETTINGS",
-                "Megnyitom az értesítési beállításokat."
-            )(it)
-        },
+        ),
+
+        // ==================== HELY ====================
 
         Command(
-            "hely",
-            generatedPhrases(
-                "helymeghatarozas",
-                "helyadatok",
-                "hely",
+            "location",
+            "helymeghatározás",
+            aliases(
                 "gps",
+                "helymeghatarozas",
+                "helymeghatarozo",
+                "helyadatok",
                 "helyzet",
-                "helyszolgaltatas"
-            )
-        ) {
+                "lokacio",
+                "location",
+                "hely beallitas",
+                "gps beallitas"
+            ),
             openSettings(
                 Settings.ACTION_LOCATION_SOURCE_SETTINGS,
                 "Megnyitom a helymeghatározás beállításait."
-            )(it)
-        },
+            )
+        ),
+
+        // ==================== ÉRTESÍTÉSEK ====================
+
+        Command(
+            "notifications",
+            "értesítések",
+            aliases(
+                "ertesites",
+                "ertesitesek",
+                "ertesitesi beallitas",
+                "ertesitesi beallitasok",
+                "jelzesek",
+                "notifikaciok",
+                "notification",
+                "notifications"
+            ),
+            openSettings(
+                Settings.ACTION_NOTIFICATION_SETTINGS,
+                "Megnyitom az értesítési beállításokat."
+            )
+        ),
+
+        // ==================== VPN ====================
+
+        Command(
+            "vpn",
+            "VPN",
+            aliases(
+                "vpn",
+                "vpn beallitas",
+                "vpn beallitasok",
+                "virtualis maganhálózat",
+                "virtualis magan halozat"
+            ),
+            openSettings(
+                Settings.ACTION_VPN_SETTINGS,
+                "Megnyitom a VPN beállításokat."
+            )
+        ),
+
+        // ==================== RENDSZER ====================
+
+        Command(
+            "settings",
+            "rendszerbeállítások",
+            aliases(
+                "beallitas",
+                "beallitasok",
+                "telefon beallitas",
+                "telefon beallitasok",
+                "rendszerbeallitas",
+                "rendszerbeallitasok",
+                "settings",
+                "setting",
+                "beallitas menu",
+                "beallitasok menu"
+            ),
+            openSettings(
+                Settings.ACTION_SETTINGS,
+                "Megnyitom a rendszerbeállításokat."
+            )
+        ),
+
+        // ==================== TÁRHELY ====================
+
+        Command(
+            "storage",
+            "tárhely",
+            aliases(
+                "tarhely",
+                "tarhely informacio",
+                "tarhely beallitas",
+                "tarhely beallitasok",
+                "memoria",
+                "belső memoria",
+                "belsomemoria",
+                "storage"
+            ),
+            openSettings(
+                Settings.ACTION_INTERNAL_STORAGE_SETTINGS,
+                "Megnyitom a tárhely beállításait."
+            )
+        ),
+
+        // ==================== HOTSPOT ====================
 
         Command(
             "hotspot",
-            generatedPhrases(
+            "mobil hotspot",
+            aliases(
                 "hotspot",
                 "mobil hotspot",
                 "wifi hotspot",
                 "internet megosztas",
-                "net megosztas"
-            )
-        ) {
+                "net megosztas",
+                "internetmegosztas",
+                "hot spot",
+                "hotspott"
+            ),
             openSettings(
                 "android.settings.TETHER_SETTINGS",
                 "Megnyitom a hotspot beállításait."
-            )(it)
-        },
-
-        Command(
-            "vpn",
-            generatedPhrases(
-                "vpn",
-                "vpn beallitasok",
-                "virtualis maganh alozat",
-                "virtualis maganhalozat"
             )
-        ) {
-            openSettings(
-                Settings.ACTION_VPN_SETTINGS,
-                "Megnyitom a VPN beállításokat."
-            )(it)
-        },
+        ),
+
+        // ==================== YOUTUBE ====================
 
         Command(
-            "beallitasok",
-            generatedPhrases(
-                "beallitasok",
-                "telefon beallitasok",
-                "rendszerbeallitasok",
-                "rendszer",
-                "beallitas"
+            "youtube",
+            "YouTube",
+            aliases(
+                "youtube",
+                "jutub",
+                "jútub",
+                "youtub",
+                "youtubot",
+                "youtube app",
+                "youtube alkalmazas",
+                "youtube video",
+                "videok",
+                "videók",
+                "videomegoszto"
+            ),
+            openApp("com.google.android.youtube", "YouTube")
+        ),
+
+        // ==================== CHROME ====================
+
+        Command(
+            "chrome",
+            "Chrome",
+            aliases(
+                "chrome",
+                "krom",
+                "króm",
+                "crome",
+                "chrom",
+                "google chrome",
+                "chrome bongeszo",
+                "google bongeszo",
+                "internet",
+                "bongeszo"
+            ),
+            openApp("com.android.chrome", "Chrome")
+        ),
+
+        // ==================== DISCORD ====================
+
+        Command(
+            "discord",
+            "Discord",
+            aliases(
+                "discord",
+                "diszkord",
+                "disscord",
+                "diskord",
+                "discord app",
+                "discord alkalmazas",
+                "discordot",
+                "diszkordot",
+                "dc",
+                "d c",
+                "beszelgetesek",
+                "discord chat"
+            ),
+            openApp("com.discord", "Discord")
+        ),
+
+        // ==================== TIKTOK ====================
+
+        Command(
+            "tiktok",
+            "TikTok",
+            aliases(
+                "tiktok",
+                "tik tok",
+                "tiktokk",
+                "tiktoc",
+                "tik tokot",
+                "tiktok app",
+                "tiktok alkalmazas",
+                "tiktok video",
+                "rovid videok",
+                "short videok"
+            ),
+            openApp("com.zhiliaoapp.musically", "TikTok")
+        ),
+
+        // ==================== INSTAGRAM ====================
+
+        Command(
+            "instagram",
+            "Instagram",
+            aliases(
+                "instagram",
+                "insta",
+                "insta gram",
+                "instagrm",
+                "instagram app",
+                "instagram alkalmazas",
+                "instat",
+                "instat nyisd meg"
+            ),
+            openApp("com.instagram.android", "Instagram")
+        ),
+
+        // ==================== FACEBOOK ====================
+
+        Command(
+            "facebook",
+            "Facebook",
+            aliases(
+                "facebook",
+                "facebok",
+                "facebook app",
+                "facebook alkalmazas",
+                "feszbuk",
+                "fészbuk",
+                "face"
+            ),
+            openApp("com.facebook.katana", "Facebook")
+        ),
+
+        // ==================== MESSENGER ====================
+
+        Command(
+            "messenger",
+            "Messenger",
+            aliases(
+                "messenger",
+                "mesenger",
+                "messenger app",
+                "messenger alkalmazas",
+                "uzenetek messenger",
+                "chat"
+            ),
+            openApp("com.facebook.orca", "Messenger")
+        ),
+
+        // ==================== WHATSAPP ====================
+
+        Command(
+            "whatsapp",
+            "WhatsApp",
+            aliases(
+                "whatsapp",
+                "what app",
+                "whats app",
+                "watsapp",
+                "whatsup",
+                "whatsapp app",
+                "whatsapp alkalmazas"
+            ),
+            openApp("com.whatsapp", "WhatsApp")
+        ),
+
+        // ==================== TELEGRAM ====================
+
+        Command(
+            "telegram",
+            "Telegram",
+            aliases(
+                "telegram",
+                "telegrám",
+                "telegran",
+                "telegram app",
+                "telegram alkalmazas"
+            ),
+            openApp("org.telegram.messenger", "Telegram")
+        ),
+
+        // ==================== SNAPCHAT ====================
+
+        Command(
+            "snapchat",
+            "Snapchat",
+            aliases(
+                "snapchat",
+                "snap chat",
+                "snap",
+                "snapcsat",
+                "snapcsat app",
+                "snapchat alkalmazas"
+            ),
+            openApp("com.snapchat.android", "Snapchat")
+        ),
+
+        // ==================== X ====================
+
+        Command(
+            "x",
+            "X",
+            aliases(
+                "x",
+                "twitter",
+                "x twitter",
+                "twitter app",
+                "twitter alkalmazas",
+                "eksz",
+                "ex"
+            ),
+            openApp("com.twitter.android", "X")
+        ),
+
+        // ==================== REDDIT ====================
+
+        Command(
+            "reddit",
+            "Reddit",
+            aliases(
+                "reddit",
+                "red it",
+                "reddit app",
+                "reddit alkalmazas",
+                "redditet"
+            ),
+            openApp("com.reddit.frontpage", "Reddit")
+        ),
+
+        // ==================== SPOTIFY ====================
+
+        Command(
+            "spotify",
+            "Spotify",
+            aliases(
+                "spotify",
+                "spotifáj",
+                "spoty",
+                "spotify app",
+                "spotify alkalmazas",
+                "zene",
+                "zenet",
+                "zenelejátszó"
+            ),
+            openApp("com.spotify.music", "Spotify")
+        ),
+
+        // ==================== STEAM ====================
+
+        Command(
+            "steam",
+            "Steam",
+            aliases(
+                "steam",
+                "sztím",
+                "stim",
+                "steam app",
+                "steam alkalmazas"
+            ),
+            openApp(
+                "com.valvesoftware.android.steam.community",
+                "Steam"
             )
-        ) {
-            openSettings(
-                Settings.ACTION_SETTINGS,
-                "Megnyitom a beállításokat."
-            )(it)
-        },
+        ),
 
-        // =========================
-        // HANG
-        // =========================
+        // ==================== TWITCH ====================
 
         Command(
-            "hangero",
-            generatedPhrases(
+            "twitch",
+            "Twitch",
+            aliases(
+                "twitch",
+                "tvis",
+                "twics",
+                "twitch app",
+                "twitch alkalmazas",
+                "streamek"
+            ),
+            openApp("tv.twitch.android.app", "Twitch")
+        ),
+
+        // ==================== NETFLIX ====================
+
+        Command(
+            "netflix",
+            "Netflix",
+            aliases(
+                "netflix",
+                "netfliks",
+                "netfli",
+                "netflix app",
+                "netflix alkalmazas",
+                "filmek",
+                "sorozatok"
+            ),
+            openApp("com.netflix.mediaclient", "Netflix")
+        ),
+
+        // ==================== WAZE ====================
+
+        Command(
+            "waze",
+            "Waze",
+            aliases(
+                "waze",
+                "véz",
+                "wejz",
+                "waze app",
+                "waze alkalmazas",
+                "navigacio",
+                "navigáció"
+            ),
+            openApp("com.waze", "Waze")
+        ),
+
+        // ==================== UBER ====================
+
+        Command(
+            "uber",
+            "Uber",
+            aliases(
+                "uber",
+                "uber app",
+                "uber alkalmazas",
+                "ubert",
+                "fuvar"
+            ),
+            openApp("com.ubercab", "Uber")
+        ),
+
+        // ==================== BOLT ====================
+
+        Command(
+            "bolt",
+            "Bolt",
+            aliases(
+                "bolt",
+                "bolt app",
+                "bolt alkalmazas",
+                "boltot",
+                "taxi"
+            ),
+            openApp("ee.mtakso.client", "Bolt")
+        ),
+
+        // ==================== GMAIL ====================
+
+        Command(
+            "gmail",
+            "Gmail",
+            aliases(
+                "gmail",
+                "g mail",
+                "gmail app",
+                "gmail alkalmazas",
+                "email",
+                "e mail",
+                "levelek",
+                "posta"
+            ),
+            openApp("com.google.android.gm", "Gmail")
+        ),
+
+        // ==================== PLAY ÁRUHÁZ ====================
+
+        Command(
+            "playstore",
+            "Play Áruház",
+            aliases(
+                "play aruhaz",
+                "play áruház",
+                "play store",
+                "playstore",
+                "google play",
+                "google play store",
+                "aruhaz",
+                "app aruhaz",
+                "alkalmazasok"
+            ),
+            openApp("com.android.vending", "Play Áruház")
+        ),
+
+        // ==================== FOTÓK ====================
+
+        Command(
+            "photos",
+            "Google Fotók",
+            aliases(
+                "fotok",
+                "fotók",
+                "google fotok",
+                "google fotók",
+                "kepek",
+                "képek",
+                "galeria",
+                "galéria",
+                "photos"
+            ),
+            openApp("com.google.android.apps.photos", "Google Fotók")
+        ),
+
+        // ==================== ZENE / HANGERŐ ====================
+
+        Command(
+            "volume",
+            "hangerő",
+            aliases(
                 "hangero",
                 "hangerő",
+                "hangero beallitas",
+                "hang beallitas",
                 "hang",
-                "media hang",
-                "hang beallitasok"
+                "hangositsd",
+                "hangosits",
+                "vedd fel a hangot",
+                "hangot fel",
+                "hangosabb"
             )
         ) { context ->
-
             val audio =
-                context.getSystemService(
-                    Context.AUDIO_SERVICE
-                ) as AudioManager
+                context.getSystemService(Context.AUDIO_SERVICE)
+                        as AudioManager
 
             audio.adjustStreamVolume(
                 AudioManager.STREAM_MUSIC,
@@ -374,659 +861,300 @@ object CommandRouter {
                 AudioManager.FLAG_SHOW_UI
             )
 
-            "Feljebb vettem a médiahangot."
+            "Feljebb vettem a hangerőt."
         },
 
-        Command(
-            "fenyero",
-            generatedPhrases(
-                "fenyero",
-                "fenyero beallitas",
-                "kepernyo fenyereje",
-                "kepernyo vilagossag",
-                "vilagossag",
-                "fenyesseg"
-            )
-        ) { context ->
-
-            if (Settings.System.canWrite(context)) {
-
-                Settings.System.putInt(
-                    context.contentResolver,
-                    Settings.System.SCREEN_BRIGHTNESS,
-                    180
-                )
-
-                "A fényerőt feljebb állítottam."
-
-            } else {
-
-                launch(
-                    context,
-                    Intent(
-                        Settings.ACTION_MANAGE_WRITE_SETTINGS,
-                        Uri.parse(
-                            "package:${context.packageName}"
-                        )
-                    )
-                )
-
-                "A fényerő módosításához engedély szükséges."
-            }
-        },
-
-        // =========================
-        // INFORMÁCIÓ
-        // =========================
+        // ==================== AKKU ====================
 
         Command(
-            "akku",
-            generatedPhrases(
-                "akkumulator",
+            "battery",
+            "akkumulátor",
+            aliases(
                 "akku",
+                "akkumulator",
+                "akkumulátor",
+                "akku szint",
                 "akku allapot",
                 "akkumulator allapot",
                 "toltottseg",
-                "toltottsegem"
+                "töltöttség",
+                "hany szazalek az akku",
+                "mennyi az akku"
             )
         ) { context ->
-
             val battery =
-                context.getSystemService(
-                    Context.BATTERY_SERVICE
-                ) as BatteryManager
+                context.getSystemService(Context.BATTERY_SERVICE)
+                        as BatteryManager
 
-            val percent =
+            val level =
                 battery.getIntProperty(
                     BatteryManager.BATTERY_PROPERTY_CAPACITY
                 )
 
-            "Az akkumulátor töltöttsége $percent százalék."
+            "Az akkumulátor töltöttsége $level százalék."
         },
 
-        // =========================
-        // FÁJLOK
-        // =========================
+        // ==================== FÁJLOK ====================
 
         Command(
-            "fajlok",
-            generatedPhrases(
-                "fajlkezelo",
+            "files",
+            "fájlkezelő",
+            aliases(
                 "fajlok",
-                "fajlok kezelese",
+                "fájlok",
+                "fajlkezelo",
+                "fájlkezelő",
                 "dokumentumok",
-                "dokumentumok megnyitasa",
+                "dokumentum",
                 "fileok",
-                "file kezelo"
+                "file kezelo",
+                "file manager",
+                "mappak",
+                "mappák"
             )
         ) { context ->
+            try {
+                val intent = Intent(Intent.ACTION_OPEN_DOCUMENT)
+                    .setType("*/*")
+                    .addCategory(Intent.CATEGORY_OPENABLE)
 
-            launch(
-                context,
-                Intent(
-                    Intent.ACTION_OPEN_DOCUMENT
-                ).apply {
-                    type = "*/*"
-                    addCategory(
-                        Intent.CATEGORY_OPENABLE
-                    )
-                }
-            )
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(intent)
 
-            "Megnyitom a fájlkezelőt."
+                "Megnyitom a fájlkezelőt."
+            } catch (_: Exception) {
+                "Nem sikerült megnyitnom a fájlkezelőt."
+            }
         },
 
-        // =========================
-        // APP GROUP
-        // =========================
+        // ==================== SZÁMOLÓGÉP ====================
 
-        app(
-            "youtube",
-            "YouTube",
-            "com.google.android.youtube",
-            "youtube",
-            "jutub",
-            "jútub",
-            "youtube app",
-            "youtube alkalmazas",
-            "video youtube"
-        ),
+        Command(
+            "calculator",
+            "számológép",
+            aliases(
+                "szamologep",
+                "számológép",
+                "kalkulator",
+                "kalkulátor",
+                "szamitas",
+                "számítás",
+                "calculator",
+                "matek",
+                "szamolni"
+            )
+        ) { context ->
+            try {
+                val intent = Intent(
+                    "android.intent.action.MAIN"
+                ).addCategory(
+                    "android.intent.category.APP_CALCULATOR"
+                )
 
-        app(
-            "chrome",
-            "Chrome",
-            "com.android.chrome",
-            "chrome",
-            "google chrome",
-            "bongeszo",
-            "internet",
-            "webes bongeszo"
-        ),
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(intent)
 
-        app(
-            "kamera",
-            "Kamera",
-            "com.android.camera",
-            "kamera",
-            "camera",
-            "fenykepezo",
-            "fotozas"
-        ),
+                "Megnyitom a számológépet."
+            } catch (_: Exception) {
+                "Nem találtam számológép alkalmazást."
+            }
+        },
 
-        app(
-            "telefon",
-            "Telefon",
-            "com.google.android.dialer",
-            "telefon",
-            "hivas",
-            "telefon app",
-            "tarcsazo"
-        ),
+        // ==================== ÓRA ====================
 
-        app(
-            "uzenetek",
-            "Üzenetek",
-            "com.google.android.apps.messaging",
-            "uzenetek",
-            "sms",
-            "uzenet",
-            "messaging"
-        ),
+        Command(
+            "clock",
+            "óra",
+            aliases(
+                "ora",
+                "óra",
+                "ebreszto",
+                "ébresztő",
+                "ebresztoora",
+                "riaszto",
+                "riasztó",
+                "alarm",
+                "clock"
+            )
+        ) { context ->
+            try {
+                val intent = Intent(
+                    "android.intent.action.SHOW_ALARMS"
+                )
 
-        app(
-            "gmail",
-            "Gmail",
-            "com.google.android.gm",
-            "gmail",
-            "email",
-            "mail",
-            "levelezes"
-        ),
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(intent)
 
-        app(
-            "play",
-            "Play Áruház",
-            "com.android.vending",
-            "play aruhaz",
-            "play store",
-            "play",
-            "google play",
-            "aruhaz"
-        ),
+                "Megnyitom az órát és az ébresztőket."
+            } catch (_: Exception) {
+                "Nem sikerült megnyitnom az órát."
+            }
+        },
 
-        app(
-            "discord",
-            "Discord",
-            "com.discord",
-            "discord",
-            "diszkord",
-            "disco",
-            "dc"
-        ),
+        // ==================== NAPTÁR ====================
 
-        app(
-            "instagram",
-            "Instagram",
-            "com.instagram.android",
-            "instagram",
-            "insta",
-            "insta app"
-        ),
+        Command(
+            "calendar",
+            "naptár",
+            aliases(
+                "naptar",
+                "naptár",
+                "calendar",
+                "esemenyek",
+                "események",
+                "programok",
+                "talalkozok",
+                "találkozók"
+            )
+        ) { context ->
+            try {
+                val intent = Intent(
+                    "android.intent.action.MAIN"
+                ).addCategory(
+                    "android.intent.category.APP_CALENDAR"
+                )
 
-        app(
-            "tiktok",
-            "TikTok",
-            "com.zhiliaoapp.musically",
-            "tiktok",
-            "tik tok",
-            "tik tok app"
-        ),
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(intent)
 
-        app(
-            "facebook",
-            "Facebook",
-            "com.facebook.katana",
-            "facebook",
-            "fészbuk",
-            "feszbuk"
-        ),
+                "Megnyitom a naptárat."
+            } catch (_: Exception) {
+                "Nem sikerült megnyitnom a naptárat."
+            }
+        },
 
-        app(
-            "messenger",
-            "Messenger",
-            "com.facebook.orca",
-            "messenger",
-            "messzi",
-            "messenger app"
-        ),
+        // ==================== TÉRKÉP ====================
 
-        app(
-            "whatsapp",
-            "WhatsApp",
-            "com.whatsapp",
-            "whatsapp",
-            "vacak",
-            "wacap",
-            "whattsapp"
-        ),
+        Command(
+            "maps",
+            "Google Térkép",
+            aliases(
+                "google maps",
+                "google map",
+                "maps",
+                "map",
+                "terkep",
+                "térkép",
+                "terkepek",
+                "térképek",
+                "navigacio",
+                "navigáció"
+            )
+        ) { context ->
+            try {
+                val intent = Intent(
+                    Intent.ACTION_VIEW,
+                    Uri.parse("geo:0,0?q=")
+                )
 
-        app(
-            "telegram",
-            "Telegram",
-            "org.telegram.messenger",
-            "telegram",
-            "tele",
-            "telegram app"
-        ),
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(intent)
 
-        app(
-            "snapchat",
-            "Snapchat",
-            "com.snapchat.android",
-            "snapchat",
-            "snap",
-            "snap chat"
-        ),
-
-        app(
-            "reddit",
-            "Reddit",
-            "com.reddit.frontpage",
-            "reddit",
-            "reddit app"
-        ),
-
-        app(
-            "linkedin",
-            "LinkedIn",
-            "com.linkedin.android",
-            "linkedin",
-            "linkdin",
-            "linked in"
-        ),
-
-        app(
-            "pinterest",
-            "Pinterest",
-            "com.pinterest",
-            "pinterest",
-            "pintereszt"
-        ),
-
-        app(
-            "teams",
-            "Microsoft Teams",
-            "com.microsoft.teams",
-            "teams",
-            "microsoft teams",
-            "team",
-            "teams app"
-        ),
-
-        app(
-            "zoom",
-            "Zoom",
-            "us.zoom.videomeetings",
-            "zoom",
-            "zoom meeting",
-            "videomeeting"
-        ),
-
-        app(
-            "meet",
-            "Google Meet",
-            "com.google.android.apps.tachyon",
-            "meet",
-            "google meet",
-            "videohivas"
-        ),
-
-        app(
-            "spotify",
-            "Spotify",
-            "com.spotify.music",
-            "spotify",
-            "spoty",
-            "spotifi",
-            "zene"
-        ),
-
-        app(
-            "steam",
-            "Steam",
-            "com.valvesoftware.android.steam.community",
-            "steam",
-            "sztím",
-            "steam app"
-        ),
-
-        app(
-            "twitch",
-            "Twitch",
-            "tv.twitch.android.app",
-            "twitch",
-            "twics",
-            "twitsh"
-        ),
-
-        app(
-            "netflix",
-            "Netflix",
-            "com.netflix.mediaclient",
-            "netflix",
-            "netflx",
-            "netflix app"
-        ),
-
-        app(
-            "disney",
-            "Disney Plus",
-            "com.disney.disneyplus",
-            "disney",
-            "disney plus",
-            "disney+"
-        ),
-
-        app(
-            "prime",
-            "Prime Video",
-            "com.amazon.avod.thirdpartyclient",
-            "prime video",
-            "amazon prime",
-            "prime"
-        ),
-
-        app(
-            "vlc",
-            "VLC",
-            "org.videolan.vlc",
-            "vlc",
-            "video lejatszo"
-        ),
-
-        app(
-            "waze",
-            "Waze",
-            "com.waze",
-            "waze",
-            "vejsz",
-            "navigacio"
-        ),
-
-        app(
-            "uber",
-            "Uber",
-            "com.ubercab",
-            "uber",
-            "uber app"
-        ),
-
-        app(
-            "bolt",
-            "Bolt",
-            "ee.mtakso.client",
-            "bolt",
-            "bolt taxi",
-            "bolt app"
-        ),
-
-        app(
-            "drive",
-            "Google Drive",
-            "com.google.android.apps.docs",
-            "google drive",
-            "drive",
-            "gdrive",
-            "meghajto"
-        ),
-
-        app(
-            "revolut",
-            "Revolut",
-            "com.revolut.revolut",
-            "revolut",
-            "revo",
-            "revolut app"
-        ),
-
-        app(
-            "amazon",
-            "Amazon",
-            "com.amazon.mShop.android.shopping",
-            "amazon",
-            "amazon app"
-        ),
-
-        app(
-            "ebay",
-            "eBay",
-            "com.ebay.mobile",
-            "ebay",
-            "ebay app"
-        ),
-
-        app(
-            "photos",
-            "Google Fotók",
-            "com.google.android.apps.photos",
-            "fotok",
-            "google fotok",
-            "photos",
-            "kepek"
-        )
+                "Megnyitom a Google Térképet."
+            } catch (_: Exception) {
+                "Nem sikerült megnyitnom a térképet."
+            }
+        }
     )
+
+    // ------------------------------------------------------------
+    // KERESÉS
+    // ------------------------------------------------------------
+
+    private data class Match(
+        val command: Command,
+        val score: Double
+    )
+
+    private fun findMatches(input: String): List<Match> {
+        val result = mutableListOf<Match>()
+
+        for (command in commands) {
+            var best = 0.0
+
+            for (alias in command.aliases) {
+                best = max(
+                    best,
+                    commandSimilarity(input, alias)
+                )
+            }
+
+            if (best >= 0.48) {
+                result += Match(command, best)
+            }
+        }
+
+        return result.sortedByDescending { it.score }
+    }
+
+    // ------------------------------------------------------------
+    // VÉGREHAJTÁS
+    // ------------------------------------------------------------
 
     fun execute(
         context: Context,
         utterance: String
-    ): Result {
+    ): CommandResult {
 
         val input = normalize(utterance)
 
         if (input.isBlank()) {
-            return Result(
+            return CommandResult(
                 ResultType.UNKNOWN,
-                "Nem hallottam a parancsot."
+                "Nem hallottam parancsot."
             )
         }
 
-        val candidates =
-            commands
-                .map { command ->
-                    Candidate(
-                        command,
-                        calculateScore(
-                            input,
-                            command
-                        )
-                    )
-                }
-                .sortedByDescending {
-                    it.score
-                }
+        val matches = findMatches(input)
 
-        val best =
-            candidates.firstOrNull()
-
-        if (best == null || best.score < 0.70) {
-
-            return Result(
+        if (matches.isEmpty()) {
+            return CommandResult(
                 ResultType.UNKNOWN,
-                "Ezt nem sikerült felismernem. Próbáld meg másképp."
+                "Ezt még nem ismertem fel. Mondd másképp."
             )
         }
 
-        val second =
-            candidates
-                .getOrNull(1)
+        val best = matches[0]
 
-        /*
-         * Ha két parancs nagyon közel van egymáshoz,
-         * nem találgatunk.
-         */
-        if (
-            second != null &&
-            second.score >= 0.70 &&
-            kotlin.math.abs(
-                best.score - second.score
-            ) < 0.08
-        ) {
-
-            return Result(
-                ResultType.CLARIFICATION,
-                "Ezt nem teljesen értettem. Azt szeretnéd, hogy ${displayName(best.command)} vagy ${displayName(second.command)}?"
-            )
-        }
-
-        return try {
-
-            Result(
+        // Nagyon biztos találat.
+        if (best.score >= 0.82) {
+            return CommandResult(
                 ResultType.EXECUTED,
-                best.command.execute(context)
-            )
-
-        } catch (_: Exception) {
-
-            Result(
-                ResultType.UNKNOWN,
-                "Megtaláltam a parancsot, de a telefon nem tudta megnyitni."
+                best.command.action(context)
             )
         }
-    }
 
-    private fun displayName(
-        command: Command
-    ): String {
+        // Két hasonló találat esetén kérdezzen vissza.
+        if (matches.size >= 2) {
+            val second = matches[1]
 
-        return when (command.id) {
-
-            "wifi" -> "a Wi-Fi-t"
-            "bluetooth" -> "a Bluetooth-t"
-            "mobilhalozat" -> "a mobilhálózatot"
-            "kijelzo" -> "a kijelzőt"
-            "ertesitesek" -> "az értesítéseket"
-            "hely" -> "a helymeghatározást"
-            "hotspot" -> "a hotspotot"
-            "vpn" -> "a VPN-t"
-            "beallitasok" -> "a beállításokat"
-            "hangero" -> "a hangerőt"
-            "fenyero" -> "a fényerőt"
-            "akku" -> "az akkumulátort"
-            "fajlok" -> "a fájlokat"
-
-            else ->
-                command.aliases
-                    .firstOrNull()
-                    ?: command.id
-        }
-    }
-
-    private fun calculateScore(
-        input: String,
-        command: Command
-    ): Double {
-
-        var best = 0.0
-
-        for (phrase in command.aliases) {
-
-            val score =
-                compareText(
-                    input,
-                    phrase
-                )
-
-            best =
-                max(
-                    best,
-                    score
-                )
-
-            if (best >= 0.98) {
-                return best
-            }
-        }
-
-        return best
-    }
-
-    private fun compareText(
-        input: String,
-        target: String
-    ): Double {
-
-        if (input == target) {
-            return 1.0
-        }
-
-        if (
-            input.contains(target) ||
-            target.contains(input)
-        ) {
-
-            val ratio =
-                minOf(
-                    input.length,
-                    target.length
-                ).toDouble() /
-                    max(
-                        input.length,
-                        target.length
+            if (
+                second.score >= 0.65 &&
+                best.score - second.score <= 0.10
+            ) {
+                return CommandResult(
+                    ResultType.AMBIGUOUS,
+                    "Nem vagyok teljesen biztos. Melyiket szeretnéd?",
+                    listOf(
+                        best.command.label,
+                        second.command.label
                     )
-
-            return 0.75 + ratio * 0.25
-        }
-
-        val inputWords =
-            input.split(" ")
-
-        val targetWords =
-            target.split(" ")
-
-        var total = 0.0
-        var matched = 0
-
-        for (word in inputWords) {
-
-            if (word.length < 2) continue
-
-            var localBest = 0.0
-
-            for (targetWord in targetWords) {
-
-                val similarity =
-                    MainActivity.fuzzySimilarity(
-                        word,
-                        targetWord
-                    )
-
-                if (similarity > localBest) {
-                    localBest = similarity
-                }
-            }
-
-            if (localBest >= 0.55) {
-                total += localBest
-                matched++
+                )
             }
         }
 
-        if (matched == 0) {
-            return 0.0
-        }
-
-        val wordScore =
-            total / matched
-
-        val fullScore =
-            MainActivity.fuzzySimilarity(
-                input,
-                target
+        // Közepesen biztos találat.
+        if (best.score >= 0.62) {
+            return CommandResult(
+                ResultType.CLARIFICATION,
+                "Erre gondoltál: ${best.command.label}?",
+                listOf(best.command.label)
             )
+        }
 
-        return (
-            wordScore * 0.65 +
-            fullScore * 0.35
+        return CommandResult(
+            ResultType.UNKNOWN,
+            "Nem vagyok elég biztos abban, mit mondtál."
         )
     }
 }
