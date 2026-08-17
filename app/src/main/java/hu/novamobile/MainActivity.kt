@@ -37,7 +37,7 @@ class MainActivity : android.app.Activity(), TextToSpeech.OnInitListener {
         override fun onError(e: Int) { if (continuous) window.decorView.postDelayed({ recognize() }, 500) }
         override fun onResults(r: Bundle?) { val heard=r?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty(); transcript.text=heard; handleSpeech(heard); if(continuous) window.decorView.postDelayed({recognize()}, 900) }
         override fun onPartialResults(p: Bundle?) { val s=p?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull(); if(!s.isNullOrBlank()) transcript.text=s }; override fun onEvent(t:Int,p:Bundle?) {}
-    })}) }
+    }) }
     private fun recognize() { if (!continuous) return; val i=Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).putExtra(RecognizerIntent.EXTRA_LANGUAGE,"hu-HU").putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM).putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS,true); try { recognizer?.startListening(i) } catch(_:Exception){} }
     private fun stopListening() { continuous=false; recognizer?.cancel(); listen.text="Hangvezérlés indítása"; status.text="Hangvezérlés szünetel." }
     private fun handleSpeech(raw:String) { val normalized=normalize(raw); val command=normalized.replace(Regex("^nova[ ,.!?]*"), "").trim(); if (!normalized.contains("nova")) { status.text="Ébresztőszóra várok: Nova"; return }; if(command.isBlank()) { reply("Igen? Miben segíthetek?"); return }; val response=CommandRouter.execute(this, command); reply(response) }
