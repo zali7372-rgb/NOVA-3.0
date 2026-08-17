@@ -2,6 +2,7 @@ package hu.novamobile
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.media.AudioManager
 import android.net.Uri
 import android.os.BatteryManager
@@ -9,829 +10,911 @@ import android.provider.Settings
 
 object CommandRouter {
 
-    private data class AppCommand(
-        val names: List<String>,
-        val packageName: String,
-        val label: String
+    private data class Command(
+        val keywords: List<String>,
+        val aliases: List<String> = emptyList(),
+        val action: (Context) -> String
     )
 
-    private val apps = listOf(
+    /*
+     * Műveleti szavak.
+     * Nem egyetlen konkrét mondatot keresünk,
+     * hanem az emberi megfogalmazás lényegét.
+     */
 
-        AppCommand(
-            listOf("youtube", "jutyub", "youtube app", "videok"),
-            "com.google.android.youtube",
-            "YouTube"
-        ),
+    private val openWords = listOf(
+        "nyisd",
+        "nyisd meg",
+        "nyisd ki",
+        "inditsd",
+        "inditsd el",
+        "inditsd be",
+        "induljon",
+        "indits",
+        "menj",
+        "menj a",
+        "lepj",
+        "lepj be",
+        "mutasd",
+        "hozd elo",
+        "told be",
+        "nyomd meg",
+        "kapcsold be",
+        "start"
+    )
 
-        AppCommand(
-            listOf("chrome", "google chrome", "bongeszo", "internet"),
-            "com.android.chrome",
-            "Chrome"
-        ),
+    private fun containsAny(
+        text: String,
+        words: List<String>
+    ): Boolean {
+        return words.any {
+            text.contains(it)
+        }
+    }
 
-        AppCommand(
-            listOf("kamera", "fenykepezogep", "foto"),
-            "com.google.android.camera2",
-            "Kamera"
-        ),
+    private fun openApp(
+        packageNames: List<String>,
+        label: String
+    ): (Context) -> String {
 
-        AppCommand(
-            listOf("discord", "diszkord"),
-            "com.discord",
-            "Discord"
-        ),
+        return { context ->
 
-        AppCommand(
-            listOf("instagram", "insta"),
-            "com.instagram.android",
-            "Instagram"
-        ),
+            var intent: Intent? = null
 
-        AppCommand(
-            listOf("tiktok", "tik tok"),
-            "com.zhiliaoapp.musically",
-            "TikTok"
-        ),
+            for (packageName in packageNames) {
 
-        AppCommand(
-            listOf("facebook", "fészbuk"),
-            "com.facebook.katana",
-            "Facebook"
-        ),
+                intent =
+                    context.packageManager
+                        .getLaunchIntentForPackage(
+                            packageName
+                        )
 
-        AppCommand(
-            listOf("messenger", "messenger uzenetek"),
-            "com.facebook.orca",
-            "Messenger"
-        ),
+                if (intent != null) break
+            }
 
-        AppCommand(
-            listOf("whatsapp", "vatsapp"),
-            "com.whatsapp",
-            "WhatsApp"
-        ),
+            if (intent != null) {
 
-        AppCommand(
-            listOf("telegram", "telegrám"),
-            "org.telegram.messenger",
-            "Telegram"
-        ),
+                try {
 
-        AppCommand(
-            listOf("snapchat", "snap"),
-            "com.snapchat.android",
-            "Snapchat"
-        ),
+                    intent.addFlags(
+                        Intent.FLAG_ACTIVITY_NEW_TASK
+                    )
 
-        AppCommand(
-            listOf("spotify", "zene", "zenet"),
-            "com.spotify.music",
-            "Spotify"
-        ),
+                    context.startActivity(intent)
 
-        AppCommand(
-            listOf("netflix"),
-            "com.netflix.mediaclient",
-            "Netflix"
-        ),
+                    "Megnyitom: $label."
 
-        AppCommand(
-            listOf("twitch"),
-            "tv.twitch.android.app",
-            "Twitch"
-        ),
+                } catch (_: Exception) {
 
-        AppCommand(
-            listOf("steam"),
-            "com.valvesoftware.android.steam.community",
-            "Steam"
-        ),
+                    "Nem sikerült megnyitnom: $label."
+                }
 
-        AppCommand(
-            listOf("vlc"),
-            "org.videolan.vlc",
-            "VLC"
-        ),
+            } else {
 
-        AppCommand(
-            listOf("waze"),
-            "com.waze",
-            "Waze"
-        ),
+                "A(z) $label alkalmazás nincs telepítve."
+            }
+        }
+    }
 
-        AppCommand(
-            listOf("bolt"),
-            "ee.mtakso.client",
-            "Bolt"
-        ),
+    private fun openSettings(
+        action: String,
+        message: String
+    ): (Context) -> String {
 
-        AppCommand(
-            listOf("uber"),
-            "com.ubercab",
-            "Uber"
-        ),
+        return { context ->
 
-        AppCommand(
-            listOf("gmail", "gmail alkalmazas", "levelezés"),
-            "com.google.android.gm",
-            "Gmail"
-        ),
+            try {
 
-        AppCommand(
-            listOf("drive", "google drive"),
-            "com.google.android.apps.docs",
-            "Google Drive"
-        ),
+                context.startActivity(
+                    Intent(action).apply {
+                        addFlags(
+                            Intent.FLAG_ACTIVITY_NEW_TASK
+                        )
+                    }
+                )
 
-        AppCommand(
-            listOf("revolut"),
-            "com.revolut.revolut",
-            "Revolut"
-        ),
+                message
 
-        AppCommand(
-            listOf("amazon"),
-            "com.amazon.mShop.android.shopping",
-            "Amazon"
-        ),
+            } catch (_: Exception) {
 
-        AppCommand(
-            listOf("ebay"),
-            "com.ebay.mobile",
-            "eBay"
-        ),
+                try {
 
-        AppCommand(
-            listOf("reddit"),
-            "com.reddit.frontpage",
-            "Reddit"
-        ),
+                    context.startActivity(
+                        Intent(
+                            Settings.ACTION_SETTINGS
+                        ).apply {
+                            addFlags(
+                                Intent.FLAG_ACTIVITY_NEW_TASK
+                            )
+                        }
+                    )
 
-        AppCommand(
-            listOf("linkedin"),
-            "com.linkedin.android",
-            "LinkedIn"
-        ),
+                    "Megnyitottam a rendszerbeállításokat."
 
-        AppCommand(
-            listOf("pinterest"),
-            "com.pinterest",
-            "Pinterest"
-        ),
+                } catch (_: Exception) {
 
-        AppCommand(
-            listOf("teams", "microsoft teams"),
-            "com.microsoft.teams",
-            "Microsoft Teams"
-        ),
+                    "Nem sikerült megnyitnom a beállításokat."
+                }
+            }
+        }
+    }
 
-        AppCommand(
-            listOf("zoom"),
-            "us.zoom.videomeetings",
-            "Zoom"
-        ),
+    private val commands =
+        mutableListOf<Command>().apply {
 
-        AppCommand(
-            listOf("meet", "google meet"),
-            "com.google.android.apps.tachyon",
-            "Google Meet"
-        ),
+            /*
+             * RENDSZERBEÁLLÍTÁSOK
+             */
 
-        AppCommand(
-            listOf("fotok", "google fotok", "kepek"),
-            "com.google.android.apps.photos",
-            "Google Fotók"
+            add(
+                Command(
+                    keywords = listOf(
+                        "wifi",
+                        "wi fi",
+                        "vezetek nelkuli",
+                        "vezetek nelkuli halozat"
+                    ),
+                    aliases = listOf(
+                        "wifi beallitas",
+                        "wifi beallitasok"
+                    ),
+                    action = openSettings(
+                        Settings.ACTION_WIFI_SETTINGS,
+                        "Megnyitom a Wi-Fi beállításokat."
+                    )
+                )
+            )
+
+            add(
+                Command(
+                    keywords = listOf(
+                        "bluetooth",
+                        "blu tooth"
+                    ),
+                    aliases = listOf(
+                        "bluetooth beallitas",
+                        "bluetooth beallitasok"
+                    ),
+                    action = openSettings(
+                        Settings.ACTION_BLUETOOTH_SETTINGS,
+                        "Megnyitom a Bluetooth beállításokat."
+                    )
+                )
+            )
+
+            add(
+                Command(
+                    keywords = listOf(
+                        "mobilnet",
+                        "mobil net",
+                        "mobilhalozat",
+                        "mobil halozat",
+                        "mobil adat",
+                        "mobiladat"
+                    ),
+                    action = openSettings(
+                        Settings.ACTION_NETWORK_OPERATOR_SETTINGS,
+                        "Megnyitom a mobilhálózati beállításokat."
+                    )
+                )
+            )
+
+            add(
+                Command(
+                    keywords = listOf(
+                        "kijelzo",
+                        "kepernyo",
+                        "display"
+                    ),
+                    action = openSettings(
+                        Settings.ACTION_DISPLAY_SETTINGS,
+                        "Megnyitom a kijelző beállításait."
+                    )
+                )
+            )
+
+            add(
+                Command(
+                    keywords = listOf(
+                        "ertesites",
+                        "ertesitesek",
+                        "jelzesek"
+                    ),
+                    action = openSettings(
+                        "android.settings.NOTIFICATION_SETTINGS",
+                        "Megnyitom az értesítési beállításokat."
+                    )
+                )
+            )
+
+            add(
+                Command(
+                    keywords = listOf(
+                        "hely",
+                        "helymeghatarozas",
+                        "gps",
+                        "lokacio"
+                    ),
+                    action = openSettings(
+                        Settings.ACTION_LOCATION_SOURCE_SETTINGS,
+                        "Megnyitom a helymeghatározás beállításait."
+                    )
+                )
+            )
+
+            add(
+                Command(
+                    keywords = listOf(
+                        "hotspot",
+                        "internetmegosztas"
+                    ),
+                    action = openSettings(
+                        "android.settings.TETHER_SETTINGS",
+                        "Megnyitom a hotspot beállításait."
+                    )
+                )
+            )
+
+            add(
+                Command(
+                    keywords = listOf(
+                        "vpn",
+                        "virtualis maganhálózat"
+                    ),
+                    action = openSettings(
+                        Settings.ACTION_VPN_SETTINGS,
+                        "Megnyitom a VPN beállításait."
+                    )
+                )
+            )
+
+            add(
+                Command(
+                    keywords = listOf(
+                        "tarhely",
+                        "tárhely"
+                    ),
+                    action = openSettings(
+                        Settings.ACTION_INTERNAL_STORAGE_SETTINGS,
+                        "Megnyitom a tárhely beállításait."
+                    )
+                )
+            )
+
+            add(
+                Command(
+                    keywords = listOf(
+                        "rendszerbeallitas",
+                        "rendszer beallitas",
+                        "beallitasok"
+                    ),
+                    action = openSettings(
+                        Settings.ACTION_SETTINGS,
+                        "Megnyitom a rendszerbeállításokat."
+                    )
+                )
+            )
+
+            /*
+             * AKKUMULÁTOR
+             */
+
+            add(
+                Command(
+                    keywords = listOf(
+                        "akku",
+                        "akkumulator",
+                        "toltottsag",
+                        "hany szazalek"
+                    ),
+                    action = { context ->
+
+                        val battery =
+                            context.getSystemService(
+                                Context.BATTERY_SERVICE
+                            ) as BatteryManager
+
+                        val percentage =
+                            battery.getIntProperty(
+                                BatteryManager
+                                    .BATTERY_PROPERTY_CAPACITY
+                            )
+
+                        "Az akkumulátor töltöttsége $percentage százalék."
+                    }
+                )
+            )
+
+            /*
+             * HANGERŐ
+             */
+
+            add(
+                Command(
+                    keywords = listOf(
+                        "hangero",
+                        "hang eros",
+                        "hangosits",
+                        "hangosabb"
+                    ),
+                    action = { context ->
+
+                        val audio =
+                            context.getSystemService(
+                                Context.AUDIO_SERVICE
+                            ) as AudioManager
+
+                        audio.adjustStreamVolume(
+                            AudioManager.STREAM_MUSIC,
+                            AudioManager.ADJUST_RAISE,
+                            AudioManager.FLAG_SHOW_UI
+                        )
+
+                        "Feljebb vettem a hangerőt."
+                    }
+                )
+            )
+
+            /*
+             * FÉNYERŐ
+             */
+
+            add(
+                Command(
+                    keywords = listOf(
+                        "fenyero",
+                        "fenyereje",
+                        "vilagossag",
+                        "kepernyo fenyereje"
+                    ),
+                    action = { context ->
+
+                        if (
+                            Settings.System.canWrite(context)
+                        ) {
+
+                            Settings.System.putInt(
+                                context.contentResolver,
+                                Settings.System.SCREEN_BRIGHTNESS,
+                                180
+                            )
+
+                            "Beállítottam a fényerőt."
+
+                        } else {
+
+                            try {
+
+                                context.startActivity(
+                                    Intent(
+                                        Settings.ACTION_MANAGE_WRITE_SETTINGS,
+                                        Uri.parse(
+                                            "package:${context.packageName}"
+                                        )
+                                    )
+                                )
+
+                                "Engedély szükséges a fényerő módosításához."
+
+                            } catch (_: Exception) {
+
+                                "Nem tudom módosítani a fényerőt."
+                            }
+                        }
+                    }
+                )
+            )
+
+            /*
+             * ALKALMAZÁSOK
+             */
+
+            addApp(
+                "youtube",
+                "YouTube",
+                "com.google.android.youtube",
+                "com.google.android.youtube.tv"
+            )
+
+            addApp(
+                "chrome",
+                "Chrome",
+                "com.android.chrome"
+            )
+
+            addApp(
+                "discord",
+                "Discord",
+                "com.discord"
+            )
+
+            addApp(
+                "instagram",
+                "Instagram",
+                "com.instagram.android"
+            )
+
+            addApp(
+                "tiktok",
+                "TikTok",
+                "com.zhiliaoapp.musically"
+            )
+
+            addApp(
+                "facebook",
+                "Facebook",
+                "com.facebook.katana"
+            )
+
+            addApp(
+                "messenger",
+                "Messenger",
+                "com.facebook.orca"
+            )
+
+            addApp(
+                "whatsapp",
+                "WhatsApp",
+                "com.whatsapp"
+            )
+
+            addApp(
+                "telegram",
+                "Telegram",
+                "org.telegram.messenger"
+            )
+
+            addApp(
+                "snapchat",
+                "Snapchat",
+                "com.snapchat.android"
+            )
+
+            addApp(
+                "reddit",
+                "Reddit",
+                "com.reddit.frontpage"
+            )
+
+            addApp(
+                "spotify",
+                "Spotify",
+                "com.spotify.music"
+            )
+
+            addApp(
+                "steam",
+                "Steam",
+                "com.valvesoftware.android.steam.community"
+            )
+
+            addApp(
+                "twitch",
+                "Twitch",
+                "tv.twitch.android.app"
+            )
+
+            addApp(
+                "netflix",
+                "Netflix",
+                "com.netflix.mediaclient"
+            )
+
+            addApp(
+                "vlc",
+                "VLC",
+                "org.videolan.vlc"
+            )
+
+            addApp(
+                "waze",
+                "Waze",
+                "com.waze"
+            )
+
+            addApp(
+                "bolt",
+                "Bolt",
+                "ee.mtakso.client"
+            )
+
+            addApp(
+                "uber",
+                "Uber",
+                "com.ubercab"
+            )
+
+            addApp(
+                "gmail",
+                "Gmail",
+                "com.google.android.gm"
+            )
+
+            addApp(
+                "drive",
+                "Google Drive",
+                "com.google.android.apps.docs"
+            )
+
+            addApp(
+                "revolut",
+                "Revolut",
+                "com.revolut.revolut"
+            )
+
+            addApp(
+                "amazon",
+                "Amazon",
+                "com.amazon.mShop.android.shopping"
+            )
+
+            addApp(
+                "ebay",
+                "eBay",
+                "com.ebay.mobile"
+            )
+
+            addApp(
+                "fotok",
+                "Google Fotók",
+                "com.google.android.apps.photos"
+            )
+
+            addApp(
+                "telefon",
+                "Telefon",
+                "com.google.android.dialer"
+            )
+
+            addApp(
+                "uzenetek",
+                "Üzenetek",
+                "com.google.android.apps.messaging"
+            )
+
+            addApp(
+                "play aruhaz",
+                "Play Áruház",
+                "com.android.vending"
+            )
+
+            /*
+             * RENDSZER APP INTENTEK
+             */
+
+            add(
+                Command(
+                    keywords = listOf(
+                        "fajlok",
+                        "fajlkezelo",
+                        "dokumentumok"
+                    ),
+                    action = { context ->
+
+                        try {
+
+                            val intent =
+                                Intent(
+                                    Intent.ACTION_OPEN_DOCUMENT
+                                ).apply {
+
+                                    type = "*/*"
+
+                                    addCategory(
+                                        Intent.CATEGORY_OPENABLE
+                                    )
+                                }
+
+                            context.startActivity(intent)
+
+                            "Megnyitom a fájlokat."
+
+                        } catch (_: Exception) {
+
+                            "Nem sikerült megnyitnom a fájlkezelőt."
+                        }
+                    }
+                )
+            )
+
+            add(
+                Command(
+                    keywords = listOf(
+                        "kalkulator",
+                        "szamologep"
+                    ),
+                    action = { context ->
+
+                        try {
+
+                            val intent =
+                                Intent(
+                                    "android.intent.action.MAIN"
+                                ).apply {
+
+                                    addCategory(
+                                        "android.intent.category.APP_CALCULATOR"
+                                    )
+                                }
+
+                            context.startActivity(intent)
+
+                            "Megnyitom a számológépet."
+
+                        } catch (_: Exception) {
+
+                            "Nem találok számológépet."
+                        }
+                    }
+                )
+            )
+
+            add(
+                Command(
+                    keywords = listOf(
+                        "ora",
+                        "ebreszto",
+                        "riaszto"
+                    ),
+                    action = { context ->
+
+                        try {
+
+                            context.startActivity(
+                                Intent(
+                                    "android.intent.action.SHOW_ALARMS"
+                                )
+                            )
+
+                            "Megnyitom az órát."
+
+                        } catch (_: Exception) {
+
+                            "Nem sikerült megnyitnom az órát."
+                        }
+                    }
+                )
+            )
+
+            add(
+                Command(
+                    keywords = listOf(
+                        "naptar",
+                        "calendar",
+                        "esemenyek"
+                    ),
+                    action = { context ->
+
+                        try {
+
+                            context.startActivity(
+                                Intent(
+                                    Intent.ACTION_MAIN
+                                ).apply {
+                                    addCategory(
+                                        "android.intent.category.APP_CALENDAR"
+                                    )
+                                }
+                            )
+
+                            "Megnyitom a naptárat."
+
+                        } catch (_: Exception) {
+
+                            "Nem sikerült megnyitnom a naptárat."
+                        }
+                    }
+                )
+            )
+        }
+
+    /*
+     * App hozzáadása.
+     *
+     * Nem csak egyetlen név működik.
+     * Például YouTube:
+     *
+     * youtube
+     * youtube app
+     * youtube alkalmazas
+     * yt
+     * you tube
+     */
+
+    private fun MutableList<Command>.addApp(
+        name: String,
+        label: String,
+        vararg packageNames: String
+    ) {
+
+        val aliases =
+            when (name) {
+
+                "youtube" ->
+                    listOf(
+                        "youtube",
+                        "you tube",
+                        "youtube app",
+                        "youtube alkalmazas",
+                        "yt"
+                    )
+
+                "chrome" ->
+                    listOf(
+                        "chrome",
+                        "google chrome",
+                        "chrome app",
+                        "bongeszo"
+                    )
+
+                "discord" ->
+                    listOf(
+                        "discord",
+                        "discord app",
+                        "discord alkalmazas"
+                    )
+
+                "instagram" ->
+                    listOf(
+                        "instagram",
+                        "insta",
+                        "instagram app"
+                    )
+
+                "tiktok" ->
+                    listOf(
+                        "tiktok",
+                        "tik tok",
+                        "tiktok app"
+                    )
+
+                "messenger" ->
+                    listOf(
+                        "messenger",
+                        "messenger app",
+                        "facebook messenger"
+                    )
+
+                "spotify" ->
+                    listOf(
+                        "spotify",
+                        "spotify app",
+                        "spotify alkalmazas"
+                    )
+
+                "facebook" ->
+                    listOf(
+                        "facebook",
+                        "facebook app"
+                    )
+
+                "telegram" ->
+                    listOf(
+                        "telegram",
+                        "telegram app"
+                    )
+
+                "whatsapp" ->
+                    listOf(
+                        "whatsapp",
+                        "what's app",
+                        "whats app",
+                        "whatsapp app"
+                    )
+
+                else ->
+                    listOf(
+                        name,
+                        "$name app",
+                        "$name alkalmazas"
+                    )
+            }
+
+        add(
+            Command(
+                keywords = aliases,
+                action = openApp(
+                    packageNames.toList(),
+                    label
+                )
+            )
         )
-    )
+    }
 
     fun execute(
         context: Context,
         utterance: String
     ): String {
 
-        val text =
-            MainActivity.normalize(utterance)
+        val value =
+            MainActivity.normalize(
+                utterance
+            )
+
+        if (value.isBlank()) {
+            return "Nem hallottam a parancsot."
+        }
 
         /*
-         * APP INDÍTÁS
+         * Először az appokat és konkrét célokat
+         * keressük, utána az általánosabb parancsokat.
          */
 
-        val app =
-            apps.firstOrNull { app ->
+        val command =
+            commands.firstOrNull { cmd ->
 
-                app.names.any { name ->
-
-                    containsFlexible(
-                        text,
-                        name
-                    )
+                cmd.keywords.any { keyword ->
+                    value.contains(keyword)
                 }
+
             }
 
-        if (app != null) {
+        return command?.action?.invoke(context)
+            ?: findInstalledApp(context, value)
+            ?: "Ezt a parancsot még nem ismerem."
+    }
 
-            return launchApp(
-                context,
-                app
-            )
-        }
+    /*
+     * EXTRA: ha a felhasználó olyan appot mond,
+     * amelyik nincs kézzel felvéve a listába,
+     * Nova megpróbálja megkeresni a telepített
+     * alkalmazások között.
+     */
 
-        /*
-         * WIFI
-         */
+    private fun findInstalledApp(
+        context: Context,
+        command: String
+    ): String? {
 
-        if (
-            containsAny(
-                text,
-                "wifi",
-                "wi fi",
-                "wlan",
-                "vezetek nelkuli halozat"
-            )
-        ) {
+        val packageManager =
+            context.packageManager
 
-            return openSettings(
-                context,
-                Settings.ACTION_WIFI_SETTINGS,
-                "Megnyitom a Wi-Fi beállításokat."
-            )
-        }
-
-        /*
-         * BLUETOOTH
-         */
-
-        if (
-            containsAny(
-                text,
-                "bluetooth",
-                "blutusz"
-            )
-        ) {
-
-            return openSettings(
-                context,
-                Settings.ACTION_BLUETOOTH_SETTINGS,
-                "Megnyitom a Bluetooth beállításokat."
-            )
-        }
-
-        /*
-         * MOBILHÁLÓZAT
-         */
-
-        if (
-            containsAny(
-                text,
-                "mobilhalozat",
-                "mobil halozat",
-                "sim",
-                "mobilnet",
-                "mobil internet"
-            )
-        ) {
-
-            return openSettings(
-                context,
-                Settings.ACTION_NETWORK_OPERATOR_SETTINGS,
-                "Megnyitom a mobilhálózati beállításokat."
-            )
-        }
-
-        /*
-         * HANGERŐ
-         */
-
-        if (
-            containsAny(
-                text,
-                "hangero",
-                "hangosits",
-                "hangosabb",
-                "feljebb a hangerot"
-            )
-        ) {
-
-            val audio =
-                context.getSystemService(
-                    Context.AUDIO_SERVICE
-                ) as AudioManager
-
-            audio.adjustStreamVolume(
-                AudioManager.STREAM_MUSIC,
-                AudioManager.ADJUST_RAISE,
-                AudioManager.FLAG_SHOW_UI
+        val apps =
+            packageManager.getInstalledApplications(
+                PackageManager.GET_META_DATA
             )
 
-            return "Feljebb vettem a hangerőt."
-        }
+        for (app in apps) {
 
-        /*
-         * FÉNYERŐ
-         */
+            val label =
+                packageManager
+                    .getApplicationLabel(app)
+                    .toString()
 
-        if (
-            containsAny(
-                text,
-                "fenyero",
-                "kepernyo fenyereje",
-                "vilagossag",
-                "fenyesebb"
-            )
-        ) {
+            val normalizedLabel =
+                MainActivity.normalize(
+                    label
+                )
 
             if (
-                Settings.System.canWrite(context)
+                normalizedLabel.length >= 3 &&
+                command.contains(normalizedLabel)
             ) {
 
-                Settings.System.putInt(
-                    context.contentResolver,
-                    Settings.System.SCREEN_BRIGHTNESS,
-                    180
-                )
+                val intent =
+                    packageManager
+                        .getLaunchIntentForPackage(
+                            app.packageName
+                        )
 
-                return "Feljebb vettem a fényerőt."
-            }
+                if (intent != null) {
 
-            openSettings(
-                context,
-                Intent(
-                    Settings.ACTION_MANAGE_WRITE_SETTINGS,
-                    Uri.parse(
-                        "package:${context.packageName}"
-                    )
-                ),
-                "A fényerő módosításához engedély szükséges."
-            )
+                    try {
 
-            return "A fényerő módosításához engedély szükséges."
-        }
+                        intent.addFlags(
+                            Intent.FLAG_ACTIVITY_NEW_TASK
+                        )
 
-        /*
-         * AKKUMULÁTOR
-         */
+                        context.startActivity(intent)
 
-        if (
-            containsAny(
-                text,
-                "akkumulator",
-                "akku",
-                "toltes",
-                "hany szazalek"
-            )
-        ) {
+                        return "Megnyitom: $label."
 
-            val battery =
-                context.getSystemService(
-                    Context.BATTERY_SERVICE
-                ) as BatteryManager
-
-            val level =
-                battery.getIntProperty(
-                    BatteryManager.BATTERY_PROPERTY_CAPACITY
-                )
-
-            return "Az akkumulátor töltöttsége $level százalék."
-        }
-
-        /*
-         * KIJELZŐ
-         */
-
-        if (
-            containsAny(
-                text,
-                "kijelzo",
-                "kepernyo beallitas",
-                "kepernyo"
-            )
-        ) {
-
-            return openSettings(
-                context,
-                Settings.ACTION_DISPLAY_SETTINGS,
-                "Megnyitom a kijelző beállításait."
-            )
-        }
-
-        /*
-         * ÉRTESÍTÉSEK
-         */
-
-        if (
-            containsAny(
-                text,
-                "ertesites",
-                "ertesitesek",
-                "ertesitesi beallitas"
-            )
-        ) {
-
-            return openSettings(
-                context,
-                Intent(
-                    "android.settings.NOTIFICATION_SETTINGS"
-                ),
-                "Megnyitom az értesítési beállításokat."
-            )
-        }
-
-        /*
-         * HELYMEGHATÁROZÁS
-         */
-
-        if (
-            containsAny(
-                text,
-                "gps",
-                "helymeghatarozas",
-                "helyadat",
-                "helyzet"
-            )
-        ) {
-
-            return openSettings(
-                context,
-                Settings.ACTION_LOCATION_SOURCE_SETTINGS,
-                "Megnyitom a helymeghatározás beállításait."
-            )
-        }
-
-        /*
-         * HOTSPOT
-         */
-
-        if (
-            containsAny(
-                text,
-                "hotspot",
-                "internet megosztas",
-                "wifi megosztas"
-            )
-        ) {
-
-            return openSettings(
-                context,
-                Intent(
-                    "android.settings.TETHER_SETTINGS"
-                ),
-                "Megnyitom a hotspot beállításait."
-            )
-        }
-
-        /*
-         * VPN
-         */
-
-        if (
-            containsAny(
-                text,
-                "vpn",
-                "virtualis maganhalozat"
-            )
-        ) {
-
-            return openSettings(
-                context,
-                Settings.ACTION_VPN_SETTINGS,
-                "Megnyitom a VPN beállításait."
-            )
-        }
-
-        /*
-         * TÁRHELY
-         */
-
-        if (
-            containsAny(
-                text,
-                "tarhely",
-                "tarhelyem",
-                "memoria",
-                "szabad hely"
-            )
-        ) {
-
-            return openSettings(
-                context,
-                Settings.ACTION_INTERNAL_STORAGE_SETTINGS,
-                "Megnyitom a tárhely beállításait."
-            )
-        }
-
-        /*
-         * ÁLTALÁNOS BEÁLLÍTÁSOK
-         */
-
-        if (
-            containsAny(
-                text,
-                "beallitasok",
-                "rendszerbeallitas",
-                "telefon beallitas"
-            )
-        ) {
-
-            return openSettings(
-                context,
-                Settings.ACTION_SETTINGS,
-                "Megnyitom a beállításokat."
-            )
-        }
-
-        /*
-         * FÁJLOK
-         */
-
-        if (
-            containsAny(
-                text,
-                "fajlok",
-                "fajlkezelo",
-                "dokumentumok",
-                "fileok"
-            )
-        ) {
-
-            val intent =
-                Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-                    type = "*/*"
-                    addCategory(
-                        Intent.CATEGORY_OPENABLE
-                    )
+                    } catch (_: Exception) {
+                    }
                 }
-
-            launch(context, intent)
-
-            return "Megnyitom a fájlokat."
-        }
-
-        /*
-         * ÓRA / ÉBRESZTŐ
-         */
-
-        if (
-            containsAny(
-                text,
-                "ora",
-                "ebreszto",
-                "riaszto",
-                "alarm"
-            )
-        ) {
-
-            launch(
-                context,
-                Intent(
-                    "android.intent.action.SHOW_ALARMS"
-                )
-            )
-
-            return "Megnyitom az ébresztőt."
-        }
-
-        /*
-         * NAPTÁR
-         */
-
-        if (
-            containsAny(
-                text,
-                "naptar",
-                "calendar",
-                "esemenyek"
-            )
-        ) {
-
-            launch(
-                context,
-                Intent(
-                    Intent.ACTION_MAIN
-                ).addCategory(
-                    "android.intent.category.APP_CALENDAR"
-                )
-            )
-
-            return "Megnyitom a naptárat."
-        }
-
-        /*
-         * SZÁMOLÓGÉP
-         */
-
-        if (
-            containsAny(
-                text,
-                "szamologep",
-                "kalkulator",
-                "szamolas"
-            )
-        ) {
-
-            launch(
-                context,
-                Intent(
-                    Intent.ACTION_MAIN
-                ).addCategory(
-                    "android.intent.category.APP_CALCULATOR"
-                )
-            )
-
-            return "Megnyitom a számológépet."
-        }
-
-        /*
-         * TÉRKÉP
-         */
-
-        if (
-            containsAny(
-                text,
-                "terkep",
-                "google maps",
-                "maps",
-                "navigacio"
-            )
-        ) {
-
-            launch(
-                context,
-                Intent(
-                    Intent.ACTION_VIEW,
-                    Uri.parse("geo:0,0?q=")
-                )
-            )
-
-            return "Megnyitom a térképet."
-        }
-
-        return "Ezt a parancsot még nem ismerem fel."
-    }
-
-    private fun launchApp(
-        context: Context,
-        app: AppCommand
-    ): String {
-
-        val intent =
-            context.packageManager
-                .getLaunchIntentForPackage(
-                    app.packageName
-                )
-
-        if (intent == null) {
-
-            return "A ${app.label} alkalmazás nincs telepítve."
-        }
-
-        launch(
-            context,
-            intent
-        )
-
-        return "Megnyitom a ${app.label} alkalmazást."
-    }
-
-    private fun containsAny(
-        text: String,
-        vararg words: String
-    ): Boolean {
-
-        return words.any { word ->
-
-            containsFlexible(
-                text,
-                word
-            )
-        }
-    }
-
-    private fun containsFlexible(
-        text: String,
-        target: String
-    ): Boolean {
-
-        val cleanTarget =
-            MainActivity.normalize(target)
-
-        if (text.contains(cleanTarget)) {
-            return true
-        }
-
-        val words =
-            text.split(" ")
-
-        return words.any { word ->
-
-            if (word.length < 4) {
-                false
-            } else {
-
-                levenshtein(
-                    word,
-                    cleanTarget
-                ) <= 1
-            }
-        }
-    }
-
-    private fun openSettings(
-        context: Context,
-        action: String,
-        fallbackMessage: String
-    ): String {
-
-        launch(
-            context,
-            Intent(action)
-        )
-
-        return fallbackMessage
-    }
-
-    private fun openSettings(
-        context: Context,
-        intent: Intent,
-        fallbackMessage: String
-    ): String {
-
-        launch(
-            context,
-            intent
-        )
-
-        return fallbackMessage
-    }
-
-    private fun launch(
-        context: Context,
-        intent: Intent
-    ) {
-
-        try {
-
-            intent.addFlags(
-                Intent.FLAG_ACTIVITY_NEW_TASK
-            )
-
-            context.startActivity(intent)
-
-        } catch (_: Exception) {
-
-            try {
-
-                context.startActivity(
-                    Intent(
-                        Settings.ACTION_SETTINGS
-                    ).addFlags(
-                        Intent.FLAG_ACTIVITY_NEW_TASK
-                    )
-                )
-
-            } catch (_: Exception) {
-            }
-        }
-    }
-
-    private fun levenshtein(
-        a: String,
-        b: String
-    ): Int {
-
-        if (a == b) return 0
-
-        if (a.isEmpty()) return b.length
-
-        if (b.isEmpty()) return a.length
-
-        val costs =
-            IntArray(b.length + 1) {
-                it
-            }
-
-        for (i in a.indices) {
-
-            var previous = i
-
-            costs[0] = i + 1
-
-            for (j in b.indices) {
-
-                val current =
-                    costs[j + 1]
-
-                costs[j + 1] =
-                    minOf(
-                        costs[j + 1] + 1,
-                        costs[j] + 1,
-                        previous +
-                            if (a[i] == b[j]) 0 else 1
-                    )
-
-                previous = current
             }
         }
 
-        return costs[b.length]
+        return null
     }
 }
