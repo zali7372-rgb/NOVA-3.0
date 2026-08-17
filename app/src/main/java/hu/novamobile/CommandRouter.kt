@@ -37,7 +37,43 @@ object CommandRouter {
         Command(phrases("szamologep", "kalkulator", "szamitasok"), { c -> launch(c, Intent("android.intent.action.MAIN").addCategory("android.intent.category.APP_CALCULATOR")); "Megnyitom a számológépet." }),
         Command(phrases("ora", "ebreszto", "riaszto"), { c -> launch(c, Intent("android.intent.action.SHOW_ALARMS")); "Megnyitom az órát." }),
         Command(phrases("naptar", "calendar", "esemenyek"), { c -> launch(c, Intent("android.intent.action.MAIN").addCategory("android.intent.category.APP_CALENDAR")); "Megnyitom a naptárat." }),
-        app("fotok", "com.google.android.apps.photos", "Fotók")
+        app("fotok", "com.google.android.apps.photos", "Fotók"),
+
+        // Közösségi és üzenetküldő alkalmazások
+        app("discord", "com.discord", "Discord"),
+        app("instagram", "com.instagram.android", "Instagram"),
+        app("tiktok", "com.zhiliaoapp.musically", "TikTok"),
+        app("facebook", "com.facebook.katana", "Facebook"),
+        app("messenger", "com.facebook.orca", "Messenger"),
+        app("whatsapp", "com.whatsapp", "WhatsApp"),
+        app("telegram", "org.telegram.messenger", "Telegram"),
+        app("snapchat", "com.snapchat.android", "Snapchat"),
+        app("x twitter", "com.twitter.android", "X"),
+        app("reddit", "com.reddit.frontpage", "Reddit"),
+        app("linkedin", "com.linkedin.android", "LinkedIn"),
+        app("pinterest", "com.pinterest", "Pinterest"),
+        app("slack", "com.Slack", "Slack"),
+        app("teams", "com.microsoft.teams", "Microsoft Teams"),
+        app("zoom", "us.zoom.videomeetings", "Zoom"),
+        app("meet", "com.google.android.apps.tachyon", "Google Meet"),
+
+        // Zene, videó és játék
+        app("spotify", "com.spotify.music", "Spotify"),
+        app("steam", "com.valvesoftware.android.steam.community", "Steam"),
+        app("twitch", "tv.twitch.android.app", "Twitch"),
+        app("netflix", "com.netflix.mediaclient", "Netflix"),
+        app("disney plus", "com.disney.disneyplus", "Disney Plus"),
+        app("prime video", "com.amazon.avod.thirdpartyclient", "Prime Video"),
+        app("vlc", "org.videolan.vlc", "VLC"),
+
+        // Navigáció, munka és vásárlás
+        app("waze", "com.waze", "Waze"),
+        app("uber", "com.ubercab", "Uber"),
+        app("bolt", "ee.mtakso.client", "Bolt"),
+        app("google drive", "com.google.android.apps.docs", "Google Drive"),
+        app("revolut", "com.revolut.revolut", "Revolut"),
+        app("amazon", "com.amazon.mShop.android.shopping", "Amazon"),
+        app("ebay", "com.ebay.mobile", "eBay")
     )
     private fun app(name:String, packageName:String, label:String): Command = Command(phrases(name, "$name alkalmazas", "$name app"), { c -> val intent=c.packageManager.getLaunchIntentForPackage(packageName); if(intent != null) { launch(c,intent); "Megnyitom: $label." } else "A(z) $label alkalmazás nincs telepítve." })
     private fun maps(): Command = Command(phrases("google maps", "terkep", "terkepek"), { c -> launch(c, Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q="))); "Megnyitom a Google Térképet." })
