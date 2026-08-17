@@ -5,11 +5,14 @@ import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
+import android.view.View
 import android.widget.Button
 import android.widget.TextView
 import java.text.Normalizer
@@ -23,8 +26,17 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
     private var recognizer: SpeechRecognizer? = null
     private var tts: TextToSpeech? = null
-    private var continuous = false
-    private var ttsReady = false
+
+    private var listening = false
+    private var novaActive = false
+
+    private val handler = Handler(Looper.getMainLooper())
+
+    private val activeTimeout = Runnable {
+        novaActive = false
+        status.text = "Nova alvó mód."
+        speak("Rendben.")
+    }
 
     private val requestAudio = 100
 
@@ -40,7 +52,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         tts = TextToSpeech(this, this)
 
         listen.setOnClickListener {
-            if (continuous) {
+            if (listening) {
                 stopListening()
             } else {
                 ensurePermissionAndStart()
@@ -48,16 +60,12 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         }
 
         findViewById<Button>(R.id.settingsButton).setOnClickListener {
-            try {
-                startActivity(
-                    Intent(
-                        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                        android.net.Uri.parse("package:$packageName")
-                    )
+            startActivity(
+                Intent(
+                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    android.net.Uri.parse("package:$packageName")
                 )
-            } catch (_: Exception) {
-                startActivity(Intent(Settings.ACTION_SETTINGS))
-            }
+            )
         }
 
         if (android.os.Build.VERSION.SDK_INT >= 33) {
@@ -70,18 +78,15 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
     override fun onInit(result: Int) {
         if (result == TextToSpeech.SUCCESS) {
-            val resultLanguage = tts?.setLanguage(Locale("hu", "HU"))
-
-            ttsReady =
-                resultLanguage != TextToSpeech.LANG_MISSING_DATA &&
-                resultLanguage != TextToSpeech.LANG_NOT_SUPPORTED
+            tts?.language = Locale("hu", "HU")
+            tts?.setSpeechRate(1.0f)
         }
     }
 
     private fun ensurePermissionAndStart() {
         if (
-            checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
-            PackageManager.PERMISSION_GRANTED
+            checkSelfPermission(Manifest.permission.RECORD_AUDIO)
+            == PackageManager.PERMISSION_GRANTED
         ) {
             startListening()
         } else {
@@ -97,18 +102,20 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         permissions: Array<out String>,
         grants: IntArray
     ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grants)
+        super.onRequestPermissionsResult(
+            requestCode,
+            permissions,
+            grants
+        )
 
-        if (requestCode == requestAudio) {
-            if (
-                grants.firstOrNull() ==
-                PackageManager.PERMISSION_GRANTED
-            ) {
-                startListening()
-            } else {
-                status.text = "A mikrofonengedély szükséges."
-                speak("Kérlek engedélyezd a mikrofon használatát.")
-            }
+        if (
+            requestCode == requestAudio &&
+            grants.firstOrNull() == PackageManager.PERMISSION_GRANTED
+        ) {
+            startListening()
+        } else if (requestCode == requestAudio) {
+            status.text = "A mikrofonengedély szükséges."
+            speak("Kérlek engedélyezd a mikrofon használatát.")
         }
     }
 
@@ -116,14 +123,14 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
         if (!SpeechRecognizer.isRecognitionAvailable(this)) {
             status.text = "A beszédfelismerés nem érhető el."
-            speak("A beszédfelismerés nem érhető el ezen a készüléken.")
             return
         }
 
-        continuous = true
+        listening = true
 
         listen.text = "Hangvezérlés leállítása"
-        status.text = "Figyelek…"
+
+        status.text = "Figyelek… Mondd: Nova"
 
         createRecognizer()
         recognize()
@@ -140,7 +147,11 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             object : RecognitionListener {
 
                 override fun onReadyForSpeech(params: Bundle?) {
-                    status.text = "Figyelek… Mondd: Nova"
+                    if (!novaActive) {
+                        status.text = "Figyelek… Mondd: Nova"
+                    } else {
+                        status.text = "Hallgatlak…"
+                    }
                 }
 
                 override fun onBeginningOfSpeech() {
@@ -151,18 +162,14 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
                 override fun onBufferReceived(buffer: ByteArray?) {}
 
-                override fun onEndOfSpeech() {
-                    status.text = "Feldolgozom…"
-                }
+                override fun onEndOfSpeech() {}
 
                 override fun onError(error: Int) {
 
-                    if (continuous) {
-                        window.decorView.postDelayed(
-                            {
-                                recognize()
-                            },
-                            600
+                    if (listening) {
+                        handler.postDelayed(
+                            { recognize() },
+                            400
                         )
                     }
                 }
@@ -177,27 +184,23 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                             ?.firstOrNull()
                             .orEmpty()
 
-                    transcript.text = heard
-
                     if (heard.isNotBlank()) {
+                        transcript.text = heard
                         handleSpeech(heard)
                     }
 
-                    if (continuous) {
-                        window.decorView.postDelayed(
-                            {
-                                recognize()
-                            },
-                            900
+                    if (listening) {
+                        handler.postDelayed(
+                            { recognize() },
+                            500
                         )
                     }
                 }
 
-                override fun onPartialResults(
-                    partialResults: Bundle?
-                ) {
+                override fun onPartialResults(results: Bundle?) {
+
                     val text =
-                        partialResults
+                        results
                             ?.getStringArrayList(
                                 SpeechRecognizer.RESULTS_RECOGNITION
                             )
@@ -218,7 +221,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
     private fun recognize() {
 
-        if (!continuous) return
+        if (!listening) return
 
         val intent =
             Intent(
@@ -244,11 +247,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                     RecognizerIntent.EXTRA_MAX_RESULTS,
                     5
                 )
-
-                putExtra(
-                    RecognizerIntent.EXTRA_PROMPT,
-                    "Mondd: Nova..."
-                )
             }
 
         try {
@@ -257,128 +255,147 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         }
     }
 
-    private fun stopListening() {
-
-        continuous = false
-
-        recognizer?.cancel()
-
-        listen.text = "Hangvezérlés indítása"
-        status.text = "Hangvezérlés szünetel."
-    }
-
     private fun handleSpeech(raw: String) {
 
         val normalized = normalize(raw)
 
-        if (normalized.isBlank()) return
-
         /*
-         * Nova megszólítások:
-         *
-         * nova
-         * nóva
-         * hey nova
-         * he nova
-         * hé nova
-         * hallo nova
-         * halló nova
-         * szia nova
-         * figyelj nova
-         * figyelj nóva
-         * nova kérlek
-         * nova légy szíves
-         * stb.
+         * Ha Nova nincs aktív módban:
+         * csak olyan mondatra reagálunk,
+         * amelyben szerepel az ébresztőszó.
          */
 
-        val wakeWords = listOf(
-            "nova",
-            "he nova",
-            "hey nova",
-            "helo nova",
-            "hello nova",
-            "hallo nova",
-            "hallo no va",
-            "szia nova",
-            "figyelj nova",
-            "figyelj no va",
-            "nova kerlek",
-            "nova legyszi",
-            "nova legyel szives"
-        )
+        if (!novaActive) {
 
-        val containsWakeWord =
-            wakeWords.any {
-                normalized.contains(it)
-            } || normalized.startsWith("nova")
+            if (!containsWakeWord(normalized)) {
+                status.text = "Ébresztőszóra várok: Nova"
+                return
+            }
 
-        if (!containsWakeWord) {
-            status.text = "Ébresztőszóra várok: Nova"
+            novaActive = true
+
+            restartActiveTimer()
+
+            val command =
+                removeWakeWord(normalized)
+
+            if (command.isBlank()) {
+                reply("Igen? Miben segíthetek?")
+                return
+            }
+
+            executeCommand(command)
+
             return
         }
 
         /*
-         * A Nova előtti és utáni megszólításokat eltávolítjuk.
+         * Nova már aktív.
+         * Innen nem kell többé kimondani.
          */
-        var command = normalized
 
-        wakeWords.forEach {
-            command = command.replace(it, " ")
-        }
+        restartActiveTimer()
 
-        command =
-            command
-                .replace(Regex("\\s+"), " ")
-                .trim()
+        executeCommand(normalized)
+    }
 
-        /*
-         * Tipikus udvariassági szavak eltávolítása.
-         */
-        val fillerWords = listOf(
-            "kerlek",
-            "legyszi",
-            "legyel szives",
-            "szeretnem",
-            "tudnal",
-            "tudnad",
-            "kerlek szepen",
-            "jo lenne ha"
-        )
+    private fun executeCommand(command: String) {
 
-        fillerWords.forEach {
-            command = command.replace(it, " ")
-        }
-
-        command =
-            command
-                .replace(Regex("\\s+"), " ")
-                .trim()
-
-        if (command.isBlank()) {
-            reply(
-                "Igen? Miben segíthetek?"
-            )
-            return
-        }
-
-        val response =
+        val result =
             CommandRouter.execute(
                 this,
                 command
             )
 
-        reply(response)
+        when (result.type) {
+
+            CommandRouter.ResultType.EXECUTED -> {
+                reply(result.message)
+            }
+
+            CommandRouter.ResultType.AMBIGUOUS -> {
+
+                val options =
+                    result.options.joinToString(
+                        " vagy "
+                    )
+
+                reply(
+                    "Ezek közül melyikre gondoltál: $options?"
+                )
+            }
+
+            CommandRouter.ResultType.UNKNOWN -> {
+                reply(result.message)
+            }
+        }
+    }
+
+    private fun restartActiveTimer() {
+
+        handler.removeCallbacks(activeTimeout)
+
+        handler.postDelayed(
+            activeTimeout,
+            10_000
+        )
+    }
+
+    private fun containsWakeWord(text: String): Boolean {
+
+        val wakeWords = listOf(
+            "nova",
+            "novah",
+            "nóva",
+            "novaa",
+            "noba",
+            "novaa",
+            "novi",
+            "novi a",
+            "nova ai",
+            "novae"
+        )
+
+        return wakeWords.any {
+            text.contains(normalize(it))
+        }
+    }
+
+    private fun removeWakeWord(text: String): String {
+
+        var result = text
+
+        val wakeWords = listOf(
+            "nova ai",
+            "novae",
+            "novi a",
+            "novaa",
+            "nóva",
+            "novah",
+            "noba",
+            "novi",
+            "nova"
+        )
+
+        for (word in wakeWords) {
+            result =
+                result.replace(
+                    normalize(word),
+                    " "
+                )
+        }
+
+        return normalize(result)
     }
 
     private fun reply(message: String) {
 
         status.text = message
+
         speak(message)
     }
 
     private fun speak(text: String) {
-
-        if (!ttsReady) return
 
         tts?.speak(
             text,
@@ -388,16 +405,26 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         )
     }
 
+    private fun stopListening() {
+
+        listening = false
+        novaActive = false
+
+        handler.removeCallbacks(activeTimeout)
+
+        recognizer?.cancel()
+
+        listen.text = "Hangvezérlés indítása"
+
+        status.text = "Hangvezérlés szünetel."
+    }
+
     override fun onDestroy() {
 
-        continuous = false
+        handler.removeCallbacksAndMessages(null)
 
         recognizer?.destroy()
-        recognizer = null
-
-        tts?.stop()
         tts?.shutdown()
-        tts = null
 
         super.onDestroy()
     }
