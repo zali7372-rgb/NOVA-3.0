@@ -359,7 +359,7 @@ object CommandRouter {
                 "notifications"
             ),
             openSettings(
-                Settings.ACTION_NOTIFICATION_SETTINGS,
+                "android.settings.NOTIFICATION_SETTINGS",
                 "Megnyitom az értesítési beállításokat."
             )
         ),
