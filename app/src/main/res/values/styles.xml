@@ -1,0 +1,3 @@
+<resources>
+ <style name="Theme.NovaMobile" parent="android:style/Theme.Material.NoActionBar"><item name="android:fontFamily">sans</item><item name="android:colorAccent">@color/nova_blue</item><item name="android:navigationBarColor">@color/nova_bg</item><item name="android:statusBarColor">@color/nova_bg</item><item name="android:windowLightStatusBar">false</item></style>
+</resources>
