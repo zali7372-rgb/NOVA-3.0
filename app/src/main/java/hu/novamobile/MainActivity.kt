@@ -49,9 +49,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             }
         }
 
-        val settingsButton = findViewById<Button>(R.id.settingsButton)
-
-        settingsButton.setOnClickListener {
+        findViewById<Button>(R.id.settingsButton).setOnClickListener {
             try {
                 val intent = Intent(
                     Settings.ACTION_APPLICATION_DETAILS_SETTINGS
@@ -81,7 +79,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     // ============================================================
 
     override fun onInit(result: Int) {
-
         if (result == TextToSpeech.SUCCESS) {
 
             val languageResult =
@@ -100,7 +97,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     }
 
     private fun speak(text: String) {
-
         if (text.isBlank()) {
             return
         }
@@ -152,7 +148,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             ) {
                 startListening()
             } else {
-
                 status.text =
                     "A mikrofonengedély szükséges a hangvezérléshez."
 
@@ -208,19 +203,19 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 override fun onReadyForSpeech(
                     params: Bundle?
                 ) {
-                    if (continuous) {
-
-                        status.text =
-                            if (novaActivated) {
-                                "Hallgatlak..."
-                            } else {
-                                "Figyelek... Mondd: Nova"
-                            }
+                    if (!continuous) {
+                        return
                     }
+
+                    status.text =
+                        if (novaActivated) {
+                            "Hallgatlak..."
+                        } else {
+                            "Figyelek... Mondd: Nova"
+                        }
                 }
 
                 override fun onBeginningOfSpeech() {
-
                     if (continuous) {
                         status.text = "Hallgatlak..."
                     }
@@ -237,7 +232,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 }
 
                 override fun onEndOfSpeech() {
-
                     if (continuous) {
                         status.text = "Feldolgozom..."
                     }
@@ -246,7 +240,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 override fun onError(
                     error: Int
                 ) {
-
                     if (!continuous) {
                         return
                     }
@@ -264,7 +257,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 override fun onResults(
                     results: Bundle?
                 ) {
-
                     if (!continuous) {
                         return
                     }
@@ -278,9 +270,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                             .orEmpty()
 
                     if (heard.isNotBlank()) {
-
                         transcript.text = heard
-
                         handleSpeech(heard)
                     }
 
@@ -297,7 +287,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 override fun onPartialResults(
                     partialResults: Bundle?
                 ) {
-
                     if (!continuous) {
                         return
                     }
@@ -324,219 +313,8 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     }
 
     // ============================================================
-    // BESZÉDFELISMERÉS INDÍTÁSA
+    // BESZÉDFELISMERÉS
     // ============================================================
-
-    private fun recognize() {
-
-        if (!continuous) {
-            return
-        }
-
-        try {
-
-            val intent =
-                Intent(
-                    RecognizerIntent.ACTION_RECOGNIZE_SPEECH
-                ).apply {
-
-                    putExtra(
-                        RecognizerIntent.EXTRA_LANGUAGE,
-                        "hu-HU"
-                    )
-
-                    putExtra(
-                        RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE,
-                        "hu-HU"
-                    )
-
-                    putExtra(
-                        RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-                        RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
-                    )
-
-                    putExtra(
-                        RecognizerIntent.EXTRA_PARTIAL_RESULTS,
-                        true
-                    )
-
-                    putExtra(
-                        RecognizerIntent.EXTRA_MAX_RESULTS,
-                        5
-                    )
-                }
-
-            recognizer?.startListening(intent)
-
-        } catch (_: Exception) {
-
-           
-    private fun ensurePermissionAndStart() {
-
-        if (
-            checkSelfPermission(Manifest.permission.RECORD_AUDIO)
-            == PackageManager.PERMISSION_GRANTED
-        ) {
-            startListening()
-        } else {
-            requestPermissions(
-                arrayOf(Manifest.permission.RECORD_AUDIO),
-                requestAudio
-            )
-        }
-    }
-
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<out String>,
-        grants: IntArray
-    ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grants)
-
-        if (requestCode == requestAudio) {
-
-            if (
-                grants.isNotEmpty() &&
-                grants[0] == PackageManager.PERMISSION_GRANTED
-            ) {
-                startListening()
-            } else {
-                status.text =
-                    "A mikrofonengedély szükséges a hangvezérléshez."
-
-                speak(
-                    "Kérlek engedélyezd a mikrofon használatát."
-                )
-            }
-        }
-    }
-
-    private fun startListening() {
-
-        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
-
-            status.text =
-                "A beszédfelismerés nem érhető el ezen a készüléken."
-
-            speak(
-                "A beszédfelismerés nem érhető el ezen a készüléken."
-            )
-
-            return
-        }
-
-        continuous = true
-
-        listen.text = "Hangvezérlés leállítása"
-
-        status.text = "Figyelek..."
-
-        createRecognizer()
-
-        recognize()
-    }
-
-    private fun createRecognizer() {
-
-        recognizer?.destroy()
-
-        recognizer =
-            SpeechRecognizer.createSpeechRecognizer(this)
-
-        recognizer?.setRecognitionListener(
-            object : RecognitionListener {
-
-                override fun onReadyForSpeech(params: Bundle?) {
-                    if (continuous) {
-                        status.text =
-                            if (novaActivated) {
-                                "Hallgatlak..."
-                            } else {
-                                "Figyelek... Mondd: Nova"
-                            }
-                    }
-                }
-
-                override fun onBeginningOfSpeech() {
-                    if (continuous) {
-                        status.text = "Hallgatlak..."
-                    }
-                }
-
-                override fun onRmsChanged(rmsdB: Float) {
-                }
-
-                override fun onBufferReceived(buffer: ByteArray?) {
-                }
-
-                override fun onEndOfSpeech() {
-                    status.text = "Feldolgozom..."
-                }
-
-                override fun onError(error: Int) {
-
-                    if (!continuous) {
-                        return
-                    }
-
-                    window.decorView.postDelayed(
-                        {
-                            recognize()
-                        },
-                        500
-                    )
-                }
-
-                override fun onResults(results: Bundle?) {
-
-                    val heard =
-                        results
-                            ?.getStringArrayList(
-                                SpeechRecognizer.RESULTS_RECOGNITION
-                            )
-                            ?.firstOrNull()
-                            .orEmpty()
-
-                    if (heard.isNotBlank()) {
-                        transcript.text = heard
-                        handleSpeech(heard)
-                    }
-
-                    if (continuous) {
-
-                        window.decorView.postDelayed(
-                            {
-                                recognize()
-                            },
-                            700
-                        )
-                    }
-                }
-
-                override fun onPartialResults(
-                    partialResults: Bundle?
-                ) {
-
-                    val partial =
-                        partialResults
-                            ?.getStringArrayList(
-                                SpeechRecognizer.RESULTS_RECOGNITION
-                            )
-                            ?.firstOrNull()
-
-                    if (!partial.isNullOrBlank()) {
-                        transcript.text = partial
-                    }
-                }
-
-                override fun onEvent(
-                    eventType: Int,
-                    params: Bundle?
-                ) {
-                }
-            }
-        )
-    }
 
     private fun recognize() {
 
@@ -551,6 +329,11 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
                 putExtra(
                     RecognizerIntent.EXTRA_LANGUAGE,
+                    "hu-HU"
+                )
+
+                putExtra(
+                    RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE,
                     "hu-HU"
                 )
 
@@ -572,13 +355,15 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
         try {
             recognizer?.startListening(intent)
+
         } catch (_: Exception) {
 
             if (continuous) {
-
                 window.decorView.postDelayed(
                     {
-                        recognize()
+                        if (continuous) {
+                            recognize()
+                        }
                     },
                     700
                 )
@@ -586,18 +371,24 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         }
     }
 
+    // ============================================================
+    // HALLGATÁS LEÁLLÍTÁSA
+    // ============================================================
+
     private fun stopListening() {
 
         continuous = false
-
         novaActivated = false
 
         recognizer?.cancel()
 
         listen.text = "Hangvezérlés indítása"
-
         status.text = "Hangvezérlés szünetel."
     }
+
+    // ============================================================
+    // BESZÉD FELDOLGOZÁSA
+    // ============================================================
 
     private fun handleSpeech(raw: String) {
 
@@ -607,26 +398,13 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             return
         }
 
-        /*
-         * NOVA aktiválása.
-         *
-         * Példák:
-         * "Nova"
-         * "Nova figyelj"
-         * "Nóva"
-         * "nova hallgass"
-         */
-
         val containsNova =
-            normalized.contains("nova")
+            Regex("\\bnova\\b").containsMatchIn(normalized)
 
         if (!novaActivated) {
 
             if (!containsNova) {
-
-                status.text =
-                    "Ébresztőszóra várok: Nova"
-
+                status.text = "Ébresztőszóra várok: Nova"
                 return
             }
 
@@ -635,62 +413,39 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             val command =
                 normalized
                     .replace(
-                        Regex(
-                            "\\bnova\\b"
-                        ),
+                        Regex("\\bnova\\b"),
                         ""
                     )
                     .trim()
 
             if (command.isBlank()) {
-
-                reply(
-                    "Igen? Miben segíthetek?"
-                )
-
+                reply("Igen? Miben segíthetek?")
                 return
             }
 
             executeCommand(command)
-
             return
         }
-
-        /*
-         * Innentől már nem kell kimondani:
-         *
-         * Nova nyisd meg a TikTokot
-         *
-         * majd:
-         *
-         * nyisd meg a YouTube-ot
-         *
-         * majd:
-         *
-         * nyisd meg a Discordot
-         */
 
         val command =
             normalized
                 .replace(
-                    Regex(
-                        "\\bnova\\b"
-                    ),
+                    Regex("\\bnova\\b"),
                     ""
                 )
                 .trim()
 
         if (command.isBlank()) {
-
-            reply(
-                "Igen?"
-            )
-
+            reply("Igen?")
             return
         }
 
         executeCommand(command)
     }
+
+    // ============================================================
+    // PARANCS VÉGREHAJTÁSA
+    // ============================================================
 
     private fun executeCommand(command: String) {
 
@@ -702,16 +457,38 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                     command
                 )
 
-            /*
-             * A jelenlegi CommandRouter verziótól függően
-             * az execute eredménye lehet String vagy saját Result.
-             *
-             * Ha Stringet ad vissza, ezt használjuk.
-             */
+            when (result.type) {
 
-            reply(result.toString())
+                CommandRouter.ResultType.EXECUTED -> {
+                    reply(result.response)
+                }
 
-        } catch (e: Exception) {
+                CommandRouter.ResultType.UNKNOWN -> {
+                    reply(result.response)
+                }
+
+                CommandRouter.ResultType.AMBIGUOUS -> {
+
+                    val options =
+                        result.options.joinToString(
+                            separator = " vagy "
+                        )
+
+                    if (options.isBlank()) {
+                        reply(result.response)
+                    } else {
+                        reply(
+                            "${result.response} $options."
+                        )
+                    }
+                }
+
+                CommandRouter.ResultType.CLARIFICATION -> {
+                    reply(result.response)
+                }
+            }
+
+        } catch (_: Exception) {
 
             status.text =
                 "Hiba történt a parancs feldolgozásakor."
@@ -722,6 +499,10 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         }
     }
 
+    // ============================================================
+    // VÁLASZ
+    // ============================================================
+
     private fun reply(message: String) {
 
         if (message.isBlank()) {
@@ -729,39 +510,31 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         }
 
         status.text = message
-
         speak(message)
     }
 
-    private fun speak(text: String) {
-
-        if (text.isBlank()) {
-            return
-        }
-
-        tts?.speak(
-            text,
-            TextToSpeech.QUEUE_FLUSH,
-            null,
-            "nova-response"
-        )
-    }
+    // ============================================================
+    // DESTROY
+    // ============================================================
 
     override fun onDestroy() {
 
         continuous = false
 
+        recognizer?.cancel()
         recognizer?.destroy()
-
         recognizer = null
 
         tts?.stop()
         tts?.shutdown()
-
         tts = null
 
         super.onDestroy()
     }
+
+    // ============================================================
+    // NORMALIZÁLÁS
+    // ============================================================
 
     companion object {
 
