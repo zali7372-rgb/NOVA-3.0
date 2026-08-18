@@ -4,7 +4,6 @@ import android.Manifest
 import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
@@ -31,10 +30,13 @@ class MainActivity : Activity() {
 
         listen.setOnClickListener {
 
-            if (NovaService.isRunning) {
-                stopNovaService()
+            if (hasMicrophonePermission()) {
+                startNovaService()
             } else {
-                ensurePermissionsAndStart()
+                requestPermissions(
+                    arrayOf(Manifest.permission.RECORD_AUDIO),
+                    requestAudio
+                )
             }
         }
 
@@ -46,7 +48,7 @@ class MainActivity : Activity() {
                     val intent = Intent(
                         Settings.ACTION_APPLICATION_DETAILS_SETTINGS
                     ).apply {
-                        data = Uri.parse(
+                        data = android.net.Uri.parse(
                             "package:$packageName"
                         )
                     }
@@ -61,38 +63,9 @@ class MainActivity : Activity() {
                 }
             }
 
-        requestRequiredPermissions()
-
-        updateUi()
-    }
-
-    // ============================================================
-    // ENGEDÉLYEK
-    // ============================================================
-
-    private fun requestRequiredPermissions() {
-
         if (
-            checkSelfPermission(
-                Manifest.permission.RECORD_AUDIO
-            ) != PackageManager.PERMISSION_GRANTED
-        ) {
-
-            requestPermissions(
-                arrayOf(
-                    Manifest.permission.RECORD_AUDIO
-                ),
-                requestAudio
-            )
-
-            return
-        }
-
-        if (
-            Build.VERSION.SDK_INT >= 33 &&
-            checkSelfPermission(
-                Manifest.permission.POST_NOTIFICATIONS
-            ) != PackageManager.PERMISSION_GRANTED
+            Build.VERSION.SDK_INT >=
+            Build.VERSION_CODES.TIRAMISU
         ) {
 
             requestPermissions(
@@ -102,28 +75,67 @@ class MainActivity : Activity() {
                 requestNotifications
             )
         }
+
+        status.text = "NOVA készen áll."
     }
 
-    private fun ensurePermissionsAndStart() {
+    // ============================================================
+    // MIKROFON ENGEDÉLY
+    // ============================================================
 
-        if (
-            checkSelfPermission(
-                Manifest.permission.RECORD_AUDIO
-            ) != PackageManager.PERMISSION_GRANTED
-        ) {
+    private fun hasMicrophonePermission(): Boolean {
 
-            requestPermissions(
-                arrayOf(
-                    Manifest.permission.RECORD_AUDIO
-                ),
-                requestAudio
-            )
+        return checkSelfPermission(
+            Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
+    }
 
-            return
+    // ============================================================
+    // NOVA SERVICE INDÍTÁSA
+    // ============================================================
+
+    private fun startNovaService() {
+
+        try {
+
+            val intent = Intent(
+                this,
+                NovaVoiceService::class.java
+            ).apply {
+                action = NovaVoiceService.ACTION_START
+            }
+
+            /*
+             * Android 8+ esetén foreground service-ként indítjuk.
+             * Ez engedi, hogy a NOVA az app háttérbe küldése után
+             * is fusson.
+             */
+            if (
+                Build.VERSION.SDK_INT >=
+                Build.VERSION_CODES.O
+            ) {
+
+                startForegroundService(intent)
+
+            } else {
+
+                startService(intent)
+            }
+
+            listen.text = "NOVA leállítása"
+            status.text =
+                "NOVA aktív. Mondd: Nova..."
+
+        } catch (_: Exception) {
+
+            status.text =
+                "Nem sikerült elindítani a NOVA háttérszolgáltatását."
         }
-
-        startNovaService()
     }
+
+    // ============================================================
+    // ENGEDÉLY VÁLASZ
+    // ============================================================
 
     override fun onRequestPermissionsResult(
         requestCode: Int,
@@ -145,148 +157,14 @@ class MainActivity : Activity() {
                 PackageManager.PERMISSION_GRANTED
             ) {
 
-                if (
-                    Build.VERSION.SDK_INT >= 33 &&
-                    checkSelfPermission(
-                        Manifest.permission.POST_NOTIFICATIONS
-                    ) != PackageManager.PERMISSION_GRANTED
-                ) {
-
-                    requestPermissions(
-                        arrayOf(
-                            Manifest.permission.POST_NOTIFICATIONS
-                        ),
-                        requestNotifications
-                    )
-
-                } else {
-
-                    startNovaService()
-                }
+                startNovaService()
 
             } else {
 
                 status.text =
-                    "A mikrofonengedély szükséges."
+                    "A mikrofonengedély szükséges a NOVA használatához."
             }
         }
-
-        if (requestCode == requestNotifications) {
-
-            if (
-                checkSelfPermission(
-                    Manifest.permission.RECORD_AUDIO
-                ) == PackageManager.PERMISSION_GRANTED
-            ) {
-                startNovaService()
-            }
-        }
-    }
-
-    // ============================================================
-    // NOVA SERVICE
-    // ============================================================
-
-    private fun startNovaService() {
-
-        val intent =
-            Intent(
-                this,
-                NovaService::class.java
-            ).apply {
-                action = NovaService.ACTION_START
-            }
-
-        try {
-
-            if (
-                Build.VERSION.SDK_INT >=
-                Build.VERSION_CODES.O
-            ) {
-
-                startForegroundService(intent)
-
-            } else {
-
-                startService(intent)
-            }
-
-            status.text =
-                "NOVA elindult."
-
-            listen.text =
-                "Hangvezérlés leállítása"
-
-        } catch (_: Exception) {
-
-            status.text =
-                "Nem sikerült elindítani a NOVA-t."
-        }
-    }
-
-    private fun stopNovaService() {
-
-        val intent =
-            Intent(
-                this,
-                NovaService::class.java
-            ).apply {
-                action = NovaService.ACTION_STOP
-            }
-
-        try {
-
-            startService(intent)
-
-        } catch (_: Exception) {
-
-            stopService(
-                Intent(
-                    this,
-                    NovaService::class.java
-                )
-            )
-        }
-
-        status.text =
-            "Hangvezérlés leállítva."
-
-        listen.text =
-            "Hangvezérlés indítása"
-    }
-
-    // ============================================================
-    // UI
-    // ============================================================
-
-    private fun updateUi() {
-
-        if (NovaService.isRunning) {
-
-            listen.text =
-                "Hangvezérlés leállítása"
-
-            status.text =
-                "NOVA aktív."
-
-        } else {
-
-            listen.text =
-                "Hangvezérlés indítása"
-
-            status.text =
-                "NOVA készen áll."
-        }
-    }
-
-    override fun onResume() {
-
-        super.onResume()
-
-        updateUi()
-
-        transcript.text =
-            NovaService.lastTranscript
     }
 
     // ============================================================
@@ -295,9 +173,7 @@ class MainActivity : Activity() {
 
     companion object {
 
-        fun normalize(
-            text: String
-        ): String {
+        fun normalize(text: String): String {
 
             return java.text.Normalizer
                 .normalize(
@@ -320,5 +196,9 @@ class MainActivity : Activity() {
                 )
                 .trim()
         }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
     }
 }
