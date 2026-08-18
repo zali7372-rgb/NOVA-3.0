@@ -35,6 +35,9 @@ class NovaVoiceService :
 
         private const val NOTIFICATION_ID =
             1001
+
+        private val RECOGNITION_TOKEN =
+            Any()
     }
 
     private var recognizer: SpeechRecognizer? = null
@@ -46,13 +49,16 @@ class NovaVoiceService :
     private var speaking = false
 
     private val handler =
-        Handler(Looper.getMainLooper())
+        Handler(
+            Looper.getMainLooper()
+        )
 
     // ============================================================
     // CREATE
     // ============================================================
 
     override fun onCreate() {
+
         super.onCreate()
 
         createNotificationChannel()
@@ -62,10 +68,11 @@ class NovaVoiceService :
             createNotification()
         )
 
-        tts = TextToSpeech(
-            applicationContext,
-            this
-        )
+        tts =
+            TextToSpeech(
+                applicationContext,
+                this
+            )
 
         createRecognizer()
     }
@@ -164,7 +171,9 @@ class NovaVoiceService :
                 this,
                 CHANNEL_ID
             )
-                .setContentTitle("NOVA aktív")
+                .setContentTitle(
+                    "NOVA aktív"
+                )
                 .setContentText(
                     "A NOVA hangvezérlés fut."
                 )
@@ -184,7 +193,9 @@ class NovaVoiceService :
 
             @Suppress("DEPRECATION")
             Notification.Builder(this)
-                .setContentTitle("NOVA aktív")
+                .setContentTitle(
+                    "NOVA aktív"
+                )
                 .setContentText(
                     "A NOVA hangvezérlés fut."
                 )
@@ -206,20 +217,35 @@ class NovaVoiceService :
     // TTS
     // ============================================================
 
-    override fun onInit(result: Int) {
+    override fun onInit(
+        result: Int
+    ) {
 
-        if (result == TextToSpeech.SUCCESS) {
+        if (
+            result ==
+            TextToSpeech.SUCCESS
+        ) {
 
             tts?.setLanguage(
-                Locale("hu", "HU")
+                Locale(
+                    "hu",
+                    "HU"
+                )
             )
 
-            tts?.setSpeechRate(1.0f)
-            tts?.setPitch(1.0f)
+            tts?.setSpeechRate(
+                1.0f
+            )
+
+            tts?.setPitch(
+                1.0f
+            )
         }
     }
 
-    private fun speak(text: String) {
+    private fun speak(
+        text: String
+    ) {
 
         if (
             text.isBlank() ||
@@ -238,32 +264,47 @@ class NovaVoiceService :
         )
 
         /*
-         * Nem indítjuk újra azonnal a recognizert.
-         * A TTS kap egy kis időt, hogy ne hallja vissza saját magát.
+         * Fontos:
+         * nem kezdünk azonnal új hallgatást.
+         * Így a NOVA nem hallja vissza a saját hangját.
          */
-        handler.postDelayed({
 
-            speaking = false
+        handler.removeCallbacksAndMessages(
+            RECOGNITION_TOKEN
+        )
 
-            if (running) {
-                scheduleRecognition(400)
-            }
+        handler.postDelayed(
+            {
 
-        }, 900)
+                speaking = false
+
+                if (running) {
+                    scheduleRecognition(500)
+                }
+
+            },
+            RECOGNITION_TOKEN,
+            1200
+        )
     }
 
     // ============================================================
-    // RECOGNIZER
+    // SPEECH RECOGNIZER
     // ============================================================
 
     private fun createRecognizer() {
 
-        recognizer?.destroy()
+        try {
+            recognizer?.cancel()
+            recognizer?.destroy()
+        } catch (_: Exception) {
+        }
 
         recognizer =
-            SpeechRecognizer.createSpeechRecognizer(
-                applicationContext
-            )
+            SpeechRecognizer
+                .createSpeechRecognizer(
+                    applicationContext
+                )
 
         recognizer?.setRecognitionListener(
 
@@ -272,7 +313,9 @@ class NovaVoiceService :
                 override fun onReadyForSpeech(
                     params: Bundle?
                 ) {
-                    recognitionInProgress = true
+
+                    recognitionInProgress =
+                        true
                 }
 
                 override fun onBeginningOfSpeech() {
@@ -295,10 +338,17 @@ class NovaVoiceService :
                     error: Int
                 ) {
 
-                    recognitionInProgress = false
+                    recognitionInProgress =
+                        false
 
-                    if (running && !speaking) {
-                        scheduleRecognition(900)
+                    if (
+                        running &&
+                        !speaking
+                    ) {
+
+                        scheduleRecognition(
+                            1000
+                        )
                     }
                 }
 
@@ -306,7 +356,8 @@ class NovaVoiceService :
                     results: Bundle?
                 ) {
 
-                    recognitionInProgress = false
+                    recognitionInProgress =
+                        false
 
                     if (
                         !running ||
@@ -324,17 +375,26 @@ class NovaVoiceService :
                             ?.firstOrNull()
                             .orEmpty()
 
-                    if (heard.isNotBlank()) {
-                        handleSpeech(heard)
+                    if (
+                        heard.isNotBlank()
+                    ) {
+
+                        handleSpeech(
+                            heard
+                        )
+
                     } else {
-                        scheduleRecognition(500)
+
+                        scheduleRecognition(
+                            500
+                        )
                     }
                 }
 
                 override fun onPartialResults(
                     partialResults: Bundle?
                 ) {
-                    // Nem hajtunk végre parancsot partial resultból.
+                    // Nincs parancsvégrehajtás partial resultból.
                 }
 
                 override fun onEvent(
@@ -357,9 +417,10 @@ class NovaVoiceService :
         }
 
         if (
-            !SpeechRecognizer.isRecognitionAvailable(
-                applicationContext
-            )
+            !SpeechRecognizer
+                .isRecognitionAvailable(
+                    applicationContext
+                )
         ) {
 
             return
@@ -368,19 +429,25 @@ class NovaVoiceService :
         running = true
         novaActivated = false
         recognitionInProgress = false
+        speaking = false
 
-        scheduleRecognition(500)
+        scheduleRecognition(
+            500
+        )
     }
 
     // ============================================================
-    // SCHEDULE RECOGNITION
+    // SCHEDULE
     // ============================================================
 
     private fun scheduleRecognition(
         delay: Long
     ) {
 
-        if (!running || speaking) {
+        if (
+            !running ||
+            speaking
+        ) {
             return
         }
 
@@ -390,14 +457,27 @@ class NovaVoiceService :
 
         handler.postDelayed(
             {
-                startRecognitionSafely()
+
+                if (
+                    running &&
+                    !speaking &&
+                    !recognitionInProgress
+                ) {
+
+                    startRecognition()
+                }
+
             },
             RECOGNITION_TOKEN,
             delay
         )
     }
 
-    private fun startRecognitionSafely() {
+    // ============================================================
+    // ACTUAL RECOGNITION
+    // ============================================================
+
+    private fun startRecognition() {
 
         if (
             !running ||
@@ -415,45 +495,59 @@ class NovaVoiceService :
 
             val intent =
                 Intent(
-                    RecognizerIntent.ACTION_RECOGNIZE_SPEECH
+                    RecognizerIntent
+                        .ACTION_RECOGNIZE_SPEECH
                 ).apply {
 
                     putExtra(
-                        RecognizerIntent.EXTRA_LANGUAGE,
+                        RecognizerIntent
+                            .EXTRA_LANGUAGE,
                         "hu-HU"
                     )
 
                     putExtra(
-                        RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE,
+                        RecognizerIntent
+                            .EXTRA_LANGUAGE_PREFERENCE,
                         "hu-HU"
                     )
 
                     putExtra(
-                        RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-                        RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
+                        RecognizerIntent
+                            .EXTRA_LANGUAGE_MODEL,
+                        RecognizerIntent
+                            .LANGUAGE_MODEL_FREE_FORM
                     )
 
                     putExtra(
-                        RecognizerIntent.EXTRA_PARTIAL_RESULTS,
+                        RecognizerIntent
+                            .EXTRA_PARTIAL_RESULTS,
                         false
                     )
 
                     putExtra(
-                        RecognizerIntent.EXTRA_MAX_RESULTS,
+                        RecognizerIntent
+                            .EXTRA_MAX_RESULTS,
                         3
                     )
                 }
 
-            recognitionInProgress = true
+            recognitionInProgress =
+                true
 
-            recognizer?.startListening(intent)
+            recognizer?.startListening(
+                intent
+            )
 
         } catch (_: Exception) {
 
-            recognitionInProgress = false
+            recognitionInProgress =
+                false
 
             if (running) {
-                scheduleRecognition(1500)
+
+                scheduleRecognition(
+                    1500
+                )
             }
         }
     }
@@ -467,21 +561,38 @@ class NovaVoiceService :
     ) {
 
         val normalized =
-            MainActivity.normalize(raw)
+            MainActivity.normalize(
+                raw
+            )
 
         if (normalized.isBlank()) {
-            scheduleRecognition(300)
+
+            scheduleRecognition(
+                300
+            )
+
             return
         }
 
         val containsNova =
-            Regex("\\bnova\\b")
-                .containsMatchIn(normalized)
+            Regex(
+                "\\bnova\\b"
+            ).containsMatchIn(
+                normalized
+            )
+
+        // ========================================================
+        // WAKE WORD
+        // ========================================================
 
         if (!novaActivated) {
 
             if (!containsNova) {
-                scheduleRecognition(300)
+
+                scheduleRecognition(
+                    300
+                )
+
                 return
             }
 
@@ -490,7 +601,9 @@ class NovaVoiceService :
             val command =
                 normalized
                     .replace(
-                        Regex("\\bnova\\b"),
+                        Regex(
+                            "\\bnova\\b"
+                        ),
                         ""
                     )
                     .trim()
@@ -498,18 +611,27 @@ class NovaVoiceService :
             if (command.isBlank()) {
 
                 speak("Igen?")
+
                 return
             }
 
-            executeCommand(command)
+            executeCommand(
+                command
+            )
 
             return
         }
 
+        // ========================================================
+        // ACTIVE
+        // ========================================================
+
         val command =
             normalized
                 .replace(
-                    Regex("\\bnova\\b"),
+                    Regex(
+                        "\\bnova\\b"
+                    ),
                     ""
                 )
                 .trim()
@@ -517,10 +639,13 @@ class NovaVoiceService :
         if (command.isBlank()) {
 
             speak("Igen?")
+
             return
         }
 
-        executeCommand(command)
+        executeCommand(
+            command
+        )
     }
 
     // ============================================================
@@ -531,17 +656,11 @@ class NovaVoiceService :
         command: String
     ) {
 
-        /*
-         * A CommandRouter gyors, ezért itt nem kell új thread.
-         * Viszont a felismerési ciklust előbb leállítjuk,
-         * így nem fut közben két recognition.
-         */
-        recognitionInProgress = false
+        recognitionInProgress =
+            false
 
         try {
-
             recognizer?.cancel()
-
         } catch (_: Exception) {
         }
 
@@ -557,25 +676,36 @@ class NovaVoiceService :
 
                 CommandRouter.ResultType.EXECUTED -> {
 
-                    speak(result.response)
+                    speak(
+                        result.response
+                    )
                 }
 
                 CommandRouter.ResultType.UNKNOWN -> {
 
-                    speak(result.response)
+                    speak(
+                        result.response
+                    )
                 }
 
                 CommandRouter.ResultType.AMBIGUOUS -> {
 
                     val options =
-                        result.options.joinToString(
-                            separator = " vagy "
-                        )
+                        result.options
+                            .joinToString(
+                                separator =
+                                    " vagy "
+                            )
 
                     speak(
-                        if (options.isBlank()) {
+                        if (
+                            options.isBlank()
+                        ) {
+
                             result.response
+
                         } else {
+
                             "${result.response} $options."
                         }
                     )
@@ -583,7 +713,9 @@ class NovaVoiceService :
 
                 CommandRouter.ResultType.CLARIFICATION -> {
 
-                    speak(result.response)
+                    speak(
+                        result.response
+                    )
                 }
             }
 
@@ -607,7 +739,7 @@ class NovaVoiceService :
         speaking = false
 
         handler.removeCallbacksAndMessages(
-            RECOGNITION_TOKEN
+            null
         )
 
         try {
@@ -656,11 +788,5 @@ class NovaVoiceService :
         intent: Intent?
     ): IBinder? {
         return null
-    }
-
-    companion object {
-
-        private val RECOGNITION_TOKEN =
-            Any()
     }
 }
