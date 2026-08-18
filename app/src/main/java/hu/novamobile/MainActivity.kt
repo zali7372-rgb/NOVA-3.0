@@ -16,6 +16,7 @@ class MainActivity : Activity() {
     private lateinit var status: TextView
     private lateinit var transcript: TextView
     private lateinit var listen: Button
+    private lateinit var settingsButton: Button
 
     private val requestAudio = 100
     private val requestNotifications = 101
@@ -30,52 +31,70 @@ class MainActivity : Activity() {
         status = findViewById(R.id.statusText)
         transcript = findViewById(R.id.transcriptText)
         listen = findViewById(R.id.listenButton)
+        settingsButton = findViewById(R.id.settingsButton)
 
         listen.setOnClickListener {
 
             if (novaRunning) {
                 stopNovaService()
             } else {
+
                 if (hasMicrophonePermission()) {
                     startNovaService()
                 } else {
                     requestPermissions(
-                        arrayOf(Manifest.permission.RECORD_AUDIO),
+                        arrayOf(
+                            Manifest.permission.RECORD_AUDIO
+                        ),
                         requestAudio
                     )
                 }
             }
         }
 
-        findViewById<Button>(R.id.settingsButton)
-            .setOnClickListener {
+        settingsButton.setOnClickListener {
 
-                try {
-                    val intent = Intent(
+            try {
+
+                val intent =
+                    Intent(
                         Settings.ACTION_APPLICATION_DETAILS_SETTINGS
                     ).apply {
-                        data = Uri.parse("package:$packageName")
+
+                        data =
+                            Uri.parse(
+                                "package:$packageName"
+                            )
                     }
 
-                    startActivity(intent)
+                startActivity(intent)
 
-                } catch (_: Exception) {
+            } catch (_: Exception) {
+
+                try {
 
                     startActivity(
-                        Intent(Settings.ACTION_SETTINGS)
+                        Intent(
+                            Settings.ACTION_SETTINGS
+                        )
                     )
+
+                } catch (_: Exception) {
                 }
             }
+        }
 
         if (
             Build.VERSION.SDK_INT >=
             Build.VERSION_CODES.TIRAMISU
         ) {
+
             if (
                 checkSelfPermission(
                     Manifest.permission.POST_NOTIFICATIONS
                 ) != PackageManager.PERMISSION_GRANTED
             ) {
+
                 requestPermissions(
                     arrayOf(
                         Manifest.permission.POST_NOTIFICATIONS
@@ -89,77 +108,108 @@ class MainActivity : Activity() {
         listen.text = "NOVA indítása"
     }
 
+    // ============================================================
+    // MIKROFON
+    // ============================================================
+
     private fun hasMicrophonePermission(): Boolean {
+
         return checkSelfPermission(
             Manifest.permission.RECORD_AUDIO
         ) == PackageManager.PERMISSION_GRANTED
     }
 
+    // ============================================================
+    // NOVA INDÍTÁSA
+    // ============================================================
+
     private fun startNovaService() {
 
         try {
 
-            val intent = Intent(
-                this,
-                NovaVoiceService::class.java
-            ).apply {
-                action = NovaVoiceService.ACTION_START
-            }
+            val intent =
+                Intent(
+                    this,
+                    NovaVoiceService::class.java
+                ).apply {
+
+                    action =
+                        NovaVoiceService.ACTION_START
+                }
 
             if (
                 Build.VERSION.SDK_INT >=
                 Build.VERSION_CODES.O
             ) {
+
                 startForegroundService(intent)
+
             } else {
+
                 startService(intent)
             }
 
             novaRunning = true
 
             listen.text = "NOVA leállítása"
-            status.text = "NOVA aktív."
 
-        } catch (e: Exception) {
+            status.text =
+                "NOVA aktív. Mondd: Nova..."
+
+        } catch (_: Exception) {
 
             novaRunning = false
 
-            listen.text = "NOVA indítása"
+            listen.text =
+                "NOVA indítása"
+
             status.text =
                 "Nem sikerült elindítani a NOVA-t."
-
-            e.printStackTrace()
         }
     }
+
+    // ============================================================
+    // NOVA LEÁLLÍTÁSA
+    // ============================================================
 
     private fun stopNovaService() {
 
         try {
 
-            val intent = Intent(
-                this,
-                NovaVoiceService::class.java
-            ).apply {
-                action = NovaVoiceService.ACTION_STOP
-            }
+            val intent =
+                Intent(
+                    this,
+                    NovaVoiceService::class.java
+                ).apply {
+
+                    action =
+                        NovaVoiceService.ACTION_STOP
+                }
 
             startService(intent)
 
-        } catch (e: Exception) {
-            e.printStackTrace()
+        } catch (_: Exception) {
         }
 
         novaRunning = false
 
-        listen.text = "NOVA indítása"
-        status.text = "NOVA leállítva."
+        listen.text =
+            "NOVA indítása"
+
+        status.text =
+            "NOVA leállítva."
     }
+
+    // ============================================================
+    // ENGEDÉLY VÁLASZ
+    // ============================================================
 
     override fun onRequestPermissionsResult(
         requestCode: Int,
         permissions: Array<out String>,
         grants: IntArray
     ) {
+
         super.onRequestPermissionsResult(
             requestCode,
             permissions,
@@ -173,17 +223,26 @@ class MainActivity : Activity() {
                 grants[0] ==
                 PackageManager.PERMISSION_GRANTED
             ) {
+
                 startNovaService()
+
             } else {
+
                 status.text =
                     "A mikrofonengedély szükséges a NOVA használatához."
             }
         }
     }
 
+    // ============================================================
+    // NORMALIZÁLÁS
+    // ============================================================
+
     companion object {
 
-        fun normalize(text: String): String {
+        fun normalize(
+            text: String
+        ): String {
 
             return java.text.Normalizer
                 .normalize(
@@ -206,5 +265,9 @@ class MainActivity : Activity() {
                 )
                 .trim()
         }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
     }
 }
