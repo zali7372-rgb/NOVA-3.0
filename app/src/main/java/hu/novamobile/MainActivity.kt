@@ -42,6 +42,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         tts = TextToSpeech(this, this)
 
         listen.setOnClickListener {
+
             if (continuous) {
                 stopListening()
             } else {
@@ -49,26 +50,39 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             }
         }
 
-        findViewById<Button>(R.id.settingsButton).setOnClickListener {
-            try {
-                val intent = Intent(
-                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS
-                ).apply {
-                    data = android.net.Uri.parse("package:$packageName")
+        findViewById<Button>(R.id.settingsButton)
+            .setOnClickListener {
+
+                try {
+
+                    val intent = Intent(
+                        Settings.ACTION_APPLICATION_DETAILS_SETTINGS
+                    ).apply {
+
+                        data =
+                            android.net.Uri.parse(
+                                "package:$packageName"
+                            )
+                    }
+
+                    startActivity(intent)
+
+                } catch (_: Exception) {
+
+                    startActivity(
+                        Intent(
+                            Settings.ACTION_SETTINGS
+                        )
+                    )
                 }
-
-                startActivity(intent)
-
-            } catch (_: Exception) {
-                startActivity(
-                    Intent(Settings.ACTION_SETTINGS)
-                )
             }
-        }
 
         if (android.os.Build.VERSION.SDK_INT >= 33) {
+
             requestPermissions(
-                arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                arrayOf(
+                    Manifest.permission.POST_NOTIFICATIONS
+                ),
                 requestNotifications
             )
         }
@@ -79,24 +93,32 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     // ============================================================
 
     override fun onInit(result: Int) {
+
         if (result == TextToSpeech.SUCCESS) {
 
             val languageResult =
-                tts?.setLanguage(Locale("hu", "HU"))
+                tts?.setLanguage(
+                    Locale("hu", "HU")
+                )
 
             tts?.setSpeechRate(1.0f)
             tts?.setPitch(1.0f)
 
             if (
-                languageResult == TextToSpeech.LANG_MISSING_DATA ||
-                languageResult == TextToSpeech.LANG_NOT_SUPPORTED
+                languageResult ==
+                TextToSpeech.LANG_MISSING_DATA ||
+                languageResult ==
+                TextToSpeech.LANG_NOT_SUPPORTED
             ) {
-                status.text = "A magyar beszédhang nem érhető el."
+
+                status.text =
+                    "A magyar beszédhang nem érhető el."
             }
         }
     }
 
     private fun speak(text: String) {
+
         if (text.isBlank()) {
             return
         }
@@ -120,10 +142,15 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 Manifest.permission.RECORD_AUDIO
             ) == PackageManager.PERMISSION_GRANTED
         ) {
+
             startListening()
+
         } else {
+
             requestPermissions(
-                arrayOf(Manifest.permission.RECORD_AUDIO),
+                arrayOf(
+                    Manifest.permission.RECORD_AUDIO
+                ),
                 requestAudio
             )
         }
@@ -134,6 +161,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         permissions: Array<out String>,
         grants: IntArray
     ) {
+
         super.onRequestPermissionsResult(
             requestCode,
             permissions,
@@ -144,10 +172,14 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
             if (
                 grants.isNotEmpty() &&
-                grants[0] == PackageManager.PERMISSION_GRANTED
+                grants[0] ==
+                PackageManager.PERMISSION_GRANTED
             ) {
+
                 startListening()
+
             } else {
+
                 status.text =
                     "A mikrofonengedély szükséges a hangvezérléshez."
 
@@ -164,7 +196,11 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
     private fun startListening() {
 
-        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+        if (
+            !SpeechRecognizer.isRecognitionAvailable(
+                this
+            )
+        ) {
 
             status.text =
                 "A beszédfelismerés nem érhető el ezen a készüléken."
@@ -179,8 +215,11 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         continuous = true
         novaActivated = false
 
-        listen.text = "Hangvezérlés leállítása"
-        status.text = "Figyelek... Mondd: Nova"
+        listen.text =
+            "Hangvezérlés leállítása"
+
+        status.text =
+            "Figyelek... Mondd: Nova"
 
         createRecognizer()
         recognize()
@@ -195,7 +234,9 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         recognizer?.destroy()
 
         recognizer =
-            SpeechRecognizer.createSpeechRecognizer(this)
+            SpeechRecognizer.createSpeechRecognizer(
+                this
+            )
 
         recognizer?.setRecognitionListener(
             object : RecognitionListener {
@@ -203,6 +244,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 override fun onReadyForSpeech(
                     params: Bundle?
                 ) {
+
                     if (!continuous) {
                         return
                     }
@@ -216,8 +258,10 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 }
 
                 override fun onBeginningOfSpeech() {
+
                     if (continuous) {
-                        status.text = "Hallgatlak..."
+                        status.text =
+                            "Hallgatlak..."
                     }
                 }
 
@@ -232,23 +276,28 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 }
 
                 override fun onEndOfSpeech() {
+
                     if (continuous) {
-                        status.text = "Feldolgozom..."
+                        status.text =
+                            "Feldolgozom..."
                     }
                 }
 
                 override fun onError(
                     error: Int
                 ) {
+
                     if (!continuous) {
                         return
                     }
 
                     window.decorView.postDelayed(
                         {
+
                             if (continuous) {
                                 recognize()
                             }
+
                         },
                         500
                     )
@@ -257,6 +306,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 override fun onResults(
                     results: Bundle?
                 ) {
+
                     if (!continuous) {
                         return
                     }
@@ -264,21 +314,27 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                     val heard =
                         results
                             ?.getStringArrayList(
-                                SpeechRecognizer.RESULTS_RECOGNITION
+                                SpeechRecognizer
+                                    .RESULTS_RECOGNITION
                             )
                             ?.firstOrNull()
                             .orEmpty()
 
                     if (heard.isNotBlank()) {
-                        transcript.text = heard
+
+                        transcript.text =
+                            heard
+
                         handleSpeech(heard)
                     }
 
                     window.decorView.postDelayed(
                         {
+
                             if (continuous) {
                                 recognize()
                             }
+
                         },
                         700
                     )
@@ -287,6 +343,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 override fun onPartialResults(
                     partialResults: Bundle?
                 ) {
+
                     if (!continuous) {
                         return
                     }
@@ -294,12 +351,15 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                     val partial =
                         partialResults
                             ?.getStringArrayList(
-                                SpeechRecognizer.RESULTS_RECOGNITION
+                                SpeechRecognizer
+                                    .RESULTS_RECOGNITION
                             )
                             ?.firstOrNull()
 
                     if (!partial.isNullOrBlank()) {
-                        transcript.text = partial
+
+                        transcript.text =
+                            partial
                     }
                 }
 
@@ -354,16 +414,20 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             }
 
         try {
+
             recognizer?.startListening(intent)
 
         } catch (_: Exception) {
 
             if (continuous) {
+
                 window.decorView.postDelayed(
                     {
+
                         if (continuous) {
                             recognize()
                         }
+
                     },
                     700
                 )
@@ -382,29 +446,39 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
         recognizer?.cancel()
 
-        listen.text = "Hangvezérlés indítása"
-        status.text = "Hangvezérlés szünetel."
+        listen.text =
+            "Hangvezérlés indítása"
+
+        status.text =
+            "Hangvezérlés szünetel."
     }
 
     // ============================================================
     // BESZÉD FELDOLGOZÁSA
     // ============================================================
 
-    private fun handleSpeech(raw: String) {
+    private fun handleSpeech(
+        raw: String
+    ) {
 
-        val normalized = normalize(raw)
+        val normalized =
+            normalize(raw)
 
         if (normalized.isBlank()) {
             return
         }
 
         val containsNova =
-            Regex("\\bnova\\b").containsMatchIn(normalized)
+            Regex("\\bnova\\b")
+                .containsMatchIn(normalized)
 
         if (!novaActivated) {
 
             if (!containsNova) {
-                status.text = "Ébresztőszóra várok: Nova"
+
+                status.text =
+                    "Ébresztőszóra várok: Nova"
+
                 return
             }
 
@@ -419,11 +493,16 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                     .trim()
 
             if (command.isBlank()) {
-                reply("Igen? Miben segíthetek?")
+
+                reply(
+                    "Igen? Miben segíthetek?"
+                )
+
                 return
             }
 
             executeCommand(command)
+
             return
         }
 
@@ -436,7 +515,9 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 .trim()
 
         if (command.isBlank()) {
+
             reply("Igen?")
+
             return
         }
 
@@ -447,7 +528,9 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     // PARANCS VÉGREHAJTÁSA
     // ============================================================
 
-    private fun executeCommand(command: String) {
+    private fun executeCommand(
+        command: String
+    ) {
 
         try {
 
@@ -460,11 +543,17 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             when (result.type) {
 
                 CommandRouter.ResultType.EXECUTED -> {
-                    reply(result.response)
+
+                    reply(
+                        result.response
+                    )
                 }
 
                 CommandRouter.ResultType.UNKNOWN -> {
-                    reply(result.response)
+
+                    reply(
+                        result.response
+                    )
                 }
 
                 CommandRouter.ResultType.AMBIGUOUS -> {
@@ -475,8 +564,13 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                         )
 
                     if (options.isBlank()) {
-                        reply(result.response)
+
+                        reply(
+                            result.response
+                        )
+
                     } else {
+
                         reply(
                             "${result.response} $options."
                         )
@@ -484,7 +578,10 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 }
 
                 CommandRouter.ResultType.CLARIFICATION -> {
-                    reply(result.response)
+
+                    reply(
+                        result.response
+                    )
                 }
             }
 
@@ -503,13 +600,17 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     // VÁLASZ
     // ============================================================
 
-    private fun reply(message: String) {
+    private fun reply(
+        message: String
+    ) {
 
         if (message.isBlank()) {
             return
         }
 
-        status.text = message
+        status.text =
+            message
+
         speak(message)
     }
 
@@ -538,7 +639,9 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
     companion object {
 
-        fun normalize(text: String): String {
+        fun normalize(
+            text: String
+        ): String {
 
             return Normalizer
                 .normalize(
