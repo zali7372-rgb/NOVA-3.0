@@ -56,7 +56,10 @@ object CommandRouter {
     // LEVENSHTEIN
     // ============================================================
 
-    private fun levenshtein(a: String, b: String): Int {
+    private fun levenshtein(
+        a: String,
+        b: String
+    ): Int {
 
         if (a == b) return 0
         if (a.isEmpty()) return b.length
@@ -106,11 +109,12 @@ object CommandRouter {
             return 1.0
         }
 
-        val distance =
-            levenshtein(aa, bb)
+        val distance = levenshtein(aa, bb)
 
-        val longest =
-            max(aa.length, bb.length)
+        val longest = max(
+            aa.length,
+            bb.length
+        )
 
         return 1.0 -
                 distance.toDouble() /
@@ -452,7 +456,7 @@ object CommandRouter {
                 "notifications"
             ),
             openSettings(
-                Settings.ACTION_NOTIFICATION_SETTINGS,
+                "android.settings.NOTIFICATION_SETTINGS",
                 "Megnyitom az értesítési beállításokat."
             )
         ),
@@ -1038,11 +1042,13 @@ object CommandRouter {
                 val intent =
                     Intent(
                         "android.intent.action.MAIN"
-                    ).addCategory(
-                        "android.intent.category.APP_CALCULATOR"
-                    ).addFlags(
-                        Intent.FLAG_ACTIVITY_NEW_TASK
                     )
+                        .addCategory(
+                            "android.intent.category.APP_CALCULATOR"
+                        )
+                        .addFlags(
+                            Intent.FLAG_ACTIVITY_NEW_TASK
+                        )
 
                 context.startActivity(intent)
 
