@@ -16,7 +16,6 @@ import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
-import androidx.core.app.NotificationCompat
 import java.util.Locale
 
 class NovaVoiceService :
@@ -59,9 +58,8 @@ class NovaVoiceService :
         createNotificationChannel()
 
         /*
-         * A foreground service-nek nagyon gyorsan notificationt
-         * kell kapnia, különben Android elkezdi nézegetni, hogy
-         * miért is él még ez a folyamat.
+         * Nem használunk androidx.core.app.NotificationCompat-ot.
+         * Így nincs szükség külön AndroidX Core dependencyre.
          */
         startForeground(
             NOTIFICATION_ID,
@@ -102,10 +100,6 @@ class NovaVoiceService :
             }
         }
 
-        /*
-         * Ha a rendszer valamiért újra létrehozza a service-t,
-         * próbáljon visszatérni.
-         */
         return START_STICKY
     }
 
@@ -164,25 +158,57 @@ class NovaVoiceService :
                         PendingIntent.FLAG_IMMUTABLE
             )
 
-        return NotificationCompat.Builder(
-            this,
-            CHANNEL_ID
-        )
-            .setContentTitle("NOVA aktív")
-            .setContentText(
-                "Háttérben figyelek a „Nova” parancsra."
+        /*
+         * Natív android.app.Notification.Builder.
+         *
+         * Így az appnak nem kell:
+         * androidx.core:core
+         */
+        return if (
+            Build.VERSION.SDK_INT >=
+            Build.VERSION_CODES.O
+        ) {
+
+            Notification.Builder(
+                this,
+                CHANNEL_ID
             )
-            .setSmallIcon(
-                android.R.drawable.ic_btn_speak_now
-            )
-            .setOngoing(true)
-            .setContentIntent(
-                pendingIntent
-            )
-            .setCategory(
-                NotificationCompat.CATEGORY_SERVICE
-            )
-            .build()
+                .setContentTitle("NOVA aktív")
+                .setContentText(
+                    "Háttérben figyelek a „Nova” parancsra."
+                )
+                .setSmallIcon(
+                    android.R.drawable.ic_btn_speak_now
+                )
+                .setOngoing(true)
+                .setContentIntent(
+                    pendingIntent
+                )
+                .setCategory(
+                    Notification.CATEGORY_SERVICE
+                )
+                .build()
+
+        } else {
+
+            @Suppress("DEPRECATION")
+            Notification.Builder(this)
+                .setContentTitle("NOVA aktív")
+                .setContentText(
+                    "Háttérben figyelek a „Nova” parancsra."
+                )
+                .setSmallIcon(
+                    android.R.drawable.ic_btn_speak_now
+                )
+                .setOngoing(true)
+                .setContentIntent(
+                    pendingIntent
+                )
+                .setCategory(
+                    Notification.CATEGORY_SERVICE
+                )
+                .build()
+        }
     }
 
     // ============================================================
@@ -281,10 +307,6 @@ class NovaVoiceService :
 
                     recognitionStarting = false
 
-                    /*
-                     * Ne próbáljuk azonnal újraindítani,
-                     * mert attól könnyen összeakad a recognizer.
-                     */
                     restartRecognition(700)
                 }
 
@@ -308,7 +330,6 @@ class NovaVoiceService :
                             .orEmpty()
 
                     if (heard.isNotBlank()) {
-
                         handleSpeech(heard)
                     }
 
@@ -319,11 +340,8 @@ class NovaVoiceService :
                     partialResults: Bundle?
                 ) {
                     /*
-                     * Szándékosan nem indítunk itt parancsot.
-                     *
-                     * A Chrome-fagyás egyik lehetséges oka az,
-                     * ha a partial result közben már elkezdjük
-                     * végrehajtani a parancsot.
+                     * Partial resultből nem hajtunk végre
+                     * parancsot.
                      */
                 }
 
@@ -348,9 +366,11 @@ class NovaVoiceService :
                     applicationContext
                 )
         ) {
+
             speak(
                 "A beszédfelismerés nem érhető el ezen a készüléken."
             )
+
             return
         }
 
@@ -383,6 +403,7 @@ class NovaVoiceService :
             if (!running) {
 
                 recognitionStarting = false
+
                 return@postDelayed
             }
 
@@ -487,9 +508,7 @@ class NovaVoiceService :
 
             if (command.isBlank()) {
 
-                speak(
-                    "Igen?"
-                )
+                speak("Igen?")
 
                 return
             }
