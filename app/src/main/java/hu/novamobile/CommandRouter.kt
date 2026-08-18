@@ -32,18 +32,35 @@ object CommandRouter {
     )
 
     // ============================================================
-    // NORMALIZÁLÁS
+    // NORMALIZE
     // ============================================================
 
-    private fun normalize(input: String): String {
+    private fun normalize(
+        input: String
+    ): String {
 
         return MainActivity
             .normalize(input)
-            .replace("alkalmazas", "app")
-            .replace("alkalmazast", "app")
-            .replace("alkalmazás", "app")
-            .replace("programot", "app")
-            .replace("program", "app")
+            .replace(
+                "alkalmazás",
+                "app"
+            )
+            .replace(
+                "alkalmazast",
+                "app"
+            )
+            .replace(
+                "alkalmazas",
+                "app"
+            )
+            .replace(
+                "programot",
+                "app"
+            )
+            .replace(
+                "program",
+                "app"
+            )
             .replace(
                 Regex("\\s+"),
                 " "
@@ -51,7 +68,9 @@ object CommandRouter {
             .trim()
     }
 
-    private fun words(text: String): List<String> {
+    private fun words(
+        text: String
+    ): List<String> {
 
         return normalize(text)
             .split(" ")
@@ -69,25 +88,45 @@ object CommandRouter {
         b: String
     ): Int {
 
-        if (a == b) return 0
-        if (a.isEmpty()) return b.length
-        if (b.isEmpty()) return a.length
-
-        var previous = IntArray(b.length + 1) {
-            it
+        if (a == b) {
+            return 0
         }
+
+        if (a.isEmpty()) {
+            return b.length
+        }
+
+        if (b.isEmpty()) {
+            return a.length
+        }
+
+        var previous =
+            IntArray(
+                b.length + 1
+            ) {
+                it
+            }
 
         for (i in a.indices) {
 
             val current =
-                IntArray(b.length + 1)
+                IntArray(
+                    b.length + 1
+                )
 
-            current[0] = i + 1
+            current[0] =
+                i + 1
 
             for (j in b.indices) {
 
                 val cost =
-                    if (a[i] == b[j]) 0 else 1
+                    if (
+                        a[i] == b[j]
+                    ) {
+                        0
+                    } else {
+                        1
+                    }
 
                 current[j + 1] =
                     min(
@@ -114,8 +153,11 @@ object CommandRouter {
         b: String
     ): Double {
 
-        val aa = normalize(a)
-        val bb = normalize(b)
+        val aa =
+            normalize(a)
+
+        val bb =
+            normalize(b)
 
         if (
             aa.isEmpty() ||
@@ -150,35 +192,44 @@ object CommandRouter {
         alias: String
     ): Double {
 
-        val inputWords = words(input)
-        val aliasWords = words(alias)
+        val inputWords =
+            words(input)
+
+        val aliasWords =
+            words(alias)
 
         if (
             inputWords.isEmpty() ||
             aliasWords.isEmpty()
         ) {
+
             return fuzzySimilarity(
                 input,
                 alias
             )
         }
 
-        var total = 0.0
-        var matched = 0
+        var total =
+            0.0
+
+        var matched =
+            0
 
         for (aliasWord in aliasWords) {
 
-            var best = 0.0
+            var best =
+                0.0
 
             for (inputWord in inputWords) {
 
-                best = max(
-                    best,
-                    fuzzySimilarity(
-                        inputWord,
-                        aliasWord
+                best =
+                    max(
+                        best,
+                        fuzzySimilarity(
+                            inputWord,
+                            aliasWord
+                        )
                     )
-                )
             }
 
             total += best
@@ -189,15 +240,20 @@ object CommandRouter {
         }
 
         val average =
-            total / aliasWords.size
+            total /
+            aliasWords.size
 
         val coverage =
             matched.toDouble() /
-                    aliasWords.size
+            aliasWords.size
 
         return average * 0.7 +
                 coverage * 0.3
     }
+
+    // ============================================================
+    // COMMAND SIMILARITY
+    // ============================================================
 
     private fun commandSimilarity(
         input: String,
@@ -211,6 +267,13 @@ object CommandRouter {
             normalize(alias)
 
         if (
+            normalizedInput.isBlank() ||
+            normalizedAlias.isBlank()
+        ) {
+            return 0.0
+        }
+
+        if (
             normalizedInput ==
             normalizedAlias
         ) {
@@ -220,19 +283,46 @@ object CommandRouter {
         if (
             normalizedInput.contains(
                 normalizedAlias
-            ) &&
-            normalizedAlias.length >= 3
+            )
         ) {
-            return 0.97
+            return 0.98
         }
 
         if (
             normalizedAlias.contains(
                 normalizedInput
             ) &&
-            normalizedInput.length >= 4
+            normalizedInput.length >= 3
         ) {
             return 0.90
+        }
+
+        val inputWords =
+            words(
+                normalizedInput
+            )
+
+        val aliasWords =
+            words(
+                normalizedAlias
+            )
+
+        if (
+            aliasWords.size == 1 &&
+            inputWords.isNotEmpty()
+        ) {
+
+            val bestWord =
+                inputWords.maxOf {
+                    fuzzySimilarity(
+                        it,
+                        aliasWords[0]
+                    )
+                }
+
+            if (bestWord >= 0.80) {
+                return bestWord
+            }
         }
 
         return max(
@@ -248,7 +338,7 @@ object CommandRouter {
     }
 
     // ============================================================
-    // ALIAS GENERÁTOR
+    // ALIAS GENERATOR
     // ============================================================
 
     private fun aliases(
@@ -267,13 +357,15 @@ object CommandRouter {
                 "inditsd",
                 "nyisd fel",
                 "menj ide",
-                "menj a",
-                "ugorj a",
+                "menjunk ide",
+                "vigyel ide",
                 "mutasd",
                 "hozd elo",
                 "kapcsold be",
                 "nyisd meg nekem",
                 "nyisd ki nekem",
+                "menj a",
+                "ugorj a",
                 "inditsd el a",
                 "nyisd meg a",
                 "nyisd ki a"
@@ -281,39 +373,36 @@ object CommandRouter {
 
         for (name in names) {
 
-            val clean =
-                MainActivity.normalize(name)
-
-            result += clean
+            result += name
 
             for (starter in starters) {
 
                 if (starter.isBlank()) {
 
-                    result += clean
+                    result += name
 
                 } else {
 
                     result +=
-                        "$starter $clean"
+                        "$starter $name"
                 }
             }
 
-            result += "$clean app"
+            result +=
+                "$name app"
+
+            result +=
+                "$name alkalmazas"
+
+            result +=
+                "$name program"
         }
 
-        return result
-            .map {
-                normalize(it)
-            }
-            .filter {
-                it.isNotBlank()
-            }
-            .toList()
+        return result.toList()
     }
 
     // ============================================================
-    // APP MEGNYITÁSA
+    // APP OPEN
     // ============================================================
 
     private fun openApp(
@@ -323,13 +412,18 @@ object CommandRouter {
 
         try {
 
-            val launchIntent =
+            val packageManager =
                 context.packageManager
+
+            val launchIntent =
+                packageManager
                     .getLaunchIntentForPackage(
                         packageName
                     )
 
-            if (launchIntent == null) {
+            if (
+                launchIntent == null
+            ) {
 
                 "$label nincs telepítve ezen a telefonon."
 
@@ -354,7 +448,7 @@ object CommandRouter {
     }
 
     // ============================================================
-    // BEÁLLÍTÁSOK
+    // SETTINGS
     // ============================================================
 
     private fun openSettings(
@@ -366,12 +460,15 @@ object CommandRouter {
 
             val intent =
                 Intent(action).apply {
+
                     addFlags(
                         Intent.FLAG_ACTIVITY_NEW_TASK
                     )
                 }
 
-            context.startActivity(intent)
+            context.startActivity(
+                intent
+            )
 
             message
 
@@ -383,6 +480,7 @@ object CommandRouter {
                     Intent(
                         Settings.ACTION_SETTINGS
                     ).apply {
+
                         addFlags(
                             Intent.FLAG_ACTIVITY_NEW_TASK
                         )
@@ -399,7 +497,7 @@ object CommandRouter {
     }
 
     // ============================================================
-    // PARANCSOK
+    // COMMANDS
     // ============================================================
 
     private val commands =
@@ -412,6 +510,7 @@ object CommandRouter {
                     "wifi",
                     "wi fi",
                     "wifit",
+                    "wi fit",
                     "wifi beallitas",
                     "wifi beallitasok",
                     "vezetek nelkuli halozat",
@@ -453,6 +552,7 @@ object CommandRouter {
                     "kepernyo",
                     "kepernyo beallitas",
                     "display",
+                    "monitor",
                     "fenyero",
                     "vilagossag"
                 ),
@@ -578,6 +678,7 @@ object CommandRouter {
                     "youtube",
                     "jutub",
                     "youtub",
+                    "youtube app",
                     "youtube video",
                     "videok"
                 ),
@@ -615,9 +716,12 @@ object CommandRouter {
                     "diszkord",
                     "disscord",
                     "diskord",
-                    "discord chat",
+                    "discord app",
+                    "discord alkalmazas",
+                    "discordot",
                     "dc",
-                    "d c"
+                    "d c",
+                    "discord chat"
                 ),
                 openApp(
                     "com.discord",
@@ -633,6 +737,7 @@ object CommandRouter {
                     "tik tok",
                     "tiktokk",
                     "tiktoc",
+                    "tiktok app",
                     "tiktok video",
                     "rovid videok"
                 ),
@@ -650,6 +755,7 @@ object CommandRouter {
                     "insta",
                     "insta gram",
                     "instagrm",
+                    "instagram app",
                     "instat"
                 ),
                 openApp(
@@ -664,6 +770,7 @@ object CommandRouter {
                 aliases(
                     "facebook",
                     "facebok",
+                    "facebook app",
                     "feszbuk",
                     "face"
                 ),
@@ -679,6 +786,7 @@ object CommandRouter {
                 aliases(
                     "messenger",
                     "mesenger",
+                    "messenger app",
                     "uzenetek messenger",
                     "chat"
                 ),
@@ -696,7 +804,8 @@ object CommandRouter {
                     "what app",
                     "whats app",
                     "watsapp",
-                    "whatsup"
+                    "whatsup",
+                    "whatsapp app"
                 ),
                 openApp(
                     "com.whatsapp",
@@ -709,7 +818,9 @@ object CommandRouter {
                 "Telegram",
                 aliases(
                     "telegram",
-                    "telegran"
+                    "telegran",
+                    "telegram app",
+                    "telegram alkalmazas"
                 ),
                 openApp(
                     "org.telegram.messenger",
@@ -724,7 +835,8 @@ object CommandRouter {
                     "snapchat",
                     "snap chat",
                     "snap",
-                    "snapcsat"
+                    "snapcsat",
+                    "snapchat app"
                 ),
                 openApp(
                     "com.snapchat.android",
@@ -739,7 +851,8 @@ object CommandRouter {
                     "twitter",
                     "x twitter",
                     "twitter app",
-                    "eksz"
+                    "eksz",
+                    "ex"
                 ),
                 openApp(
                     "com.twitter.android",
@@ -753,6 +866,7 @@ object CommandRouter {
                 aliases(
                     "reddit",
                     "red it",
+                    "reddit app",
                     "redditet"
                 ),
                 openApp(
@@ -767,6 +881,7 @@ object CommandRouter {
                 aliases(
                     "spotify",
                     "spoty",
+                    "spotify app",
                     "zene",
                     "zenet",
                     "zenelejatszo"
@@ -782,7 +897,8 @@ object CommandRouter {
                 "Steam",
                 aliases(
                     "steam",
-                    "stim"
+                    "stim",
+                    "steam app"
                 ),
                 openApp(
                     "com.valvesoftware.android.steam.community",
@@ -797,6 +913,7 @@ object CommandRouter {
                     "twitch",
                     "tvis",
                     "twics",
+                    "twitch app",
                     "streamek"
                 ),
                 openApp(
@@ -812,6 +929,7 @@ object CommandRouter {
                     "netflix",
                     "netfliks",
                     "netfli",
+                    "netflix app",
                     "filmek",
                     "sorozatok"
                 ),
@@ -827,6 +945,7 @@ object CommandRouter {
                 aliases(
                     "waze",
                     "wejz",
+                    "waze app",
                     "navigacio"
                 ),
                 openApp(
@@ -840,6 +959,7 @@ object CommandRouter {
                 "Uber",
                 aliases(
                     "uber",
+                    "uber app",
                     "ubert",
                     "fuvar"
                 ),
@@ -854,6 +974,7 @@ object CommandRouter {
                 "Bolt",
                 aliases(
                     "bolt",
+                    "bolt app",
                     "boltot",
                     "taxi"
                 ),
@@ -869,6 +990,7 @@ object CommandRouter {
                 aliases(
                     "gmail",
                     "g mail",
+                    "gmail app",
                     "email",
                     "e mail",
                     "levelek",
@@ -970,8 +1092,11 @@ object CommandRouter {
                     )
 
                 if (level >= 0) {
+
                     "Az akkumulátor töltöttsége $level százalék."
+
                 } else {
+
                     "Nem tudtam lekérni az akkumulátor töltöttségét."
                 }
             },
@@ -1009,7 +1134,9 @@ object CommandRouter {
                             )
                         }
 
-                    context.startActivity(intent)
+                    context.startActivity(
+                        intent
+                    )
 
                     "Megnyitom a fájlkezelőt."
 
@@ -1047,7 +1174,9 @@ object CommandRouter {
                             )
                         }
 
-                    context.startActivity(intent)
+                    context.startActivity(
+                        intent
+                    )
 
                     "Megnyitom a számológépet."
 
@@ -1082,7 +1211,9 @@ object CommandRouter {
                             )
                         }
 
-                    context.startActivity(intent)
+                    context.startActivity(
+                        intent
+                    )
 
                     "Megnyitom az órát és az ébresztőket."
 
@@ -1120,7 +1251,9 @@ object CommandRouter {
                             )
                         }
 
-                    context.startActivity(intent)
+                    context.startActivity(
+                        intent
+                    )
 
                     "Megnyitom a naptárat."
 
@@ -1139,7 +1272,8 @@ object CommandRouter {
                     "maps",
                     "map",
                     "terkep",
-                    "terkepek"
+                    "terkepek",
+                    "navigacio"
                 )
             ) { context ->
 
@@ -1158,7 +1292,9 @@ object CommandRouter {
                             )
                         }
 
-                    context.startActivity(intent)
+                    context.startActivity(
+                        intent
+                    )
 
                     "Megnyitom a Google Térképet."
 
@@ -1182,40 +1318,115 @@ object CommandRouter {
         input: String
     ): List<Match> {
 
-        val result =
+        val normalized =
+            normalize(input)
+
+        val exactMatches =
+            mutableListOf<Match>()
+
+        // ========================================================
+        // 1. EXACT / CONTAINS
+        // ========================================================
+
+        for (command in commands) {
+
+            for (alias in command.aliases) {
+
+                val normalizedAlias =
+                    normalize(alias)
+
+                if (
+                    normalized ==
+                    normalizedAlias
+                ) {
+
+                    exactMatches +=
+                        Match(
+                            command,
+                            1.0
+                        )
+
+                    break
+                }
+
+                if (
+                    normalized.contains(
+                        normalizedAlias
+                    )
+                ) {
+
+                    exactMatches +=
+                        Match(
+                            command,
+                            0.98
+                        )
+
+                    break
+                }
+            }
+        }
+
+        if (exactMatches.isNotEmpty()) {
+
+            return exactMatches
+                .distinctBy {
+                    it.command.id
+                }
+                .sortedByDescending {
+                    it.score
+                }
+        }
+
+        // ========================================================
+        // 2. FUZZY
+        // ========================================================
+
+        val fuzzyMatches =
             mutableListOf<Match>()
 
         for (command in commands) {
 
-            var best = 0.0
+            var best =
+                0.0
 
             for (alias in command.aliases) {
 
-                best = max(
-                    best,
+                val score =
                     commandSimilarity(
-                        input,
+                        normalized,
                         alias
                     )
-                )
+
+                if (score > best) {
+                    best = score
+                }
+
+                if (best >= 0.95) {
+                    break
+                }
             }
 
-            if (best >= 0.50) {
+            if (best >= 0.55) {
 
-                result += Match(
-                    command,
-                    best
-                )
+                fuzzyMatches +=
+                    Match(
+                        command,
+                        best
+                    )
             }
         }
 
-        return result.sortedByDescending {
-            it.score
-        }
+        return fuzzyMatches
+            .distinctBy {
+                it.command.id
+            }
+            .sortedByDescending {
+                it.score
+            }
     }
 
     // ============================================================
-    // VÉGREHAJTÁS
+    // EXECUTE
     // ============================================================
 
     fun execute(
@@ -1246,26 +1457,35 @@ object CommandRouter {
         }
 
         val best =
-            matches[0]
+            matches.first()
 
-        // Nagyon biztos találat
-        if (best.score >= 0.82) {
+        // ========================================================
+        // ERŐS TALÁLAT
+        // ========================================================
+
+        if (best.score >= 0.90) {
 
             return CommandResult(
                 ResultType.EXECUTED,
-                best.command.action(context)
+                best.command.action(
+                    context
+                )
             )
         }
 
-        // Két hasonló találat
+        // ========================================================
+        // AMBIGUOUS
+        // ========================================================
+
         if (matches.size >= 2) {
 
             val second =
                 matches[1]
 
             if (
-                second.score >= 0.65 &&
-                best.score - second.score <= 0.10
+                second.score >= 0.70 &&
+                best.score -
+                second.score <= 0.08
             ) {
 
                 return CommandResult(
@@ -1279,8 +1499,11 @@ object CommandRouter {
             }
         }
 
-        // Egy közepesen erős találat
-        if (best.score >= 0.65) {
+        // ========================================================
+        // CLARIFICATION
+        // ========================================================
+
+        if (best.score >= 0.68) {
 
             return CommandResult(
                 ResultType.CLARIFICATION,
