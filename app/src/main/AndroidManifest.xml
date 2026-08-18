@@ -2,23 +2,23 @@
 
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Mikrofon -->
-    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission
+        android:name="android.permission.RECORD_AUDIO" />
 
-    <!-- Értesítések Android 13+ -->
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission
+        android:name="android.permission.POST_NOTIFICATIONS" />
 
-    <!-- Foreground Service -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission
+        android:name="android.permission.FOREGROUND_SERVICE" />
 
-    <!-- Foreground Service mikrofon használattal -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission
+        android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
 
-    <!-- Hálózati állapot -->
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission
+        android:name="android.permission.ACCESS_NETWORK_STATE" />
 
-    <!-- Rendszerbeállítások módosítása, ha szükséges -->
-    <uses-permission android:name="android.permission.WRITE_SETTINGS" />
+    <uses-permission
+        android:name="android.permission.WRITE_SETTINGS" />
 
     <application
         android:allowBackup="true"
@@ -26,22 +26,22 @@
         android:theme="@style/Theme.NovaMobile"
         android:supportsRtl="true">
 
-        <!-- NOVA fő Activity -->
         <activity
             android:name=".MainActivity"
             android:exported="true">
 
             <intent-filter>
 
-                <action android:name="android.intent.action.MAIN" />
+                <action
+                    android:name="android.intent.action.MAIN" />
 
-                <category android:name="android.intent.category.LAUNCHER" />
+                <category
+                    android:name="android.intent.category.LAUNCHER" />
 
             </intent-filter>
 
         </activity>
 
-        <!-- NOVA háttérben futó hangvezérlése -->
         <service
             android:name=".NovaVoiceService"
             android:enabled="true"
