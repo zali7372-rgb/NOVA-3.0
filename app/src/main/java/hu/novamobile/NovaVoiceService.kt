@@ -9,41 +9,76 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
+import android.speech.tts.TextToSpeech
 import androidx.core.app.NotificationCompat
 import java.util.Locale
 
-class NovaVoiceService : Service() {
+class NovaVoiceService :
+    Service(),
+    TextToSpeech.OnInitListener {
 
     companion object {
-        const val ACTION_START = "hu.novamobile.START_VOICE"
-        const val ACTION_STOP = "hu.novamobile.STOP_VOICE"
 
-        private const val CHANNEL_ID = "nova_voice_channel"
-        private const val NOTIFICATION_ID = 1001
+        const val ACTION_START =
+            "hu.novamobile.START_VOICE"
+
+        const val ACTION_STOP =
+            "hu.novamobile.STOP_VOICE"
+
+        private const val CHANNEL_ID =
+            "nova_voice_channel"
+
+        private const val NOTIFICATION_ID =
+            1001
     }
 
     private var recognizer: SpeechRecognizer? = null
+    private var tts: TextToSpeech? = null
 
     private var running = false
     private var novaActivated = false
-    private var restarting = false
+    private var recognitionStarting = false
+
+    private val handler =
+        Handler(Looper.getMainLooper())
+
+    // ============================================================
+    // CREATE
+    // ============================================================
 
     override fun onCreate() {
+
         super.onCreate()
 
         createNotificationChannel()
 
+        /*
+         * A foreground service-nek nagyon gyorsan notificationt
+         * kell kapnia, különben Android elkezdi nézegetni, hogy
+         * miért is él még ez a folyamat.
+         */
         startForeground(
             NOTIFICATION_ID,
             createNotification()
         )
 
+        tts = TextToSpeech(
+            applicationContext,
+            this
+        )
+
         createRecognizer()
     }
+
+    // ============================================================
+    // COMMAND
+    // ============================================================
 
     override fun onStartCommand(
         intent: Intent?,
@@ -54,32 +89,46 @@ class NovaVoiceService : Service() {
         when (intent?.action) {
 
             ACTION_START -> {
-                startVoiceRecognition()
+
+                if (!running) {
+                    startListening()
+                }
             }
 
             ACTION_STOP -> {
-                stopVoiceRecognition()
+
+                stopListening()
                 stopSelf()
             }
         }
 
+        /*
+         * Ha a rendszer valamiért újra létrehozza a service-t,
+         * próbáljon visszatérni.
+         */
         return START_STICKY
     }
 
     // ============================================================
-    // NOTIFICATION
+    // NOTIFICATION CHANNEL
     // ============================================================
 
     private fun createNotificationChannel() {
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        if (
+            Build.VERSION.SDK_INT >=
+            Build.VERSION_CODES.O
+        ) {
 
             val channel = NotificationChannel(
                 CHANNEL_ID,
                 "NOVA hangvezérlés",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "NOVA háttérben futó hangvezérlése"
+
+                description =
+                    "NOVA háttérben futó hangvezérlése"
+
                 setShowBadge(false)
             }
 
@@ -88,16 +137,23 @@ class NovaVoiceService : Service() {
                     Context.NOTIFICATION_SERVICE
                 ) as NotificationManager
 
-            manager.createNotificationChannel(channel)
+            manager.createNotificationChannel(
+                channel
+            )
         }
     }
 
+    // ============================================================
+    // NOTIFICATION
+    // ============================================================
+
     private fun createNotification(): Notification {
 
-        val openIntent = Intent(
-            this,
-            MainActivity::class.java
-        )
+        val openIntent =
+            Intent(
+                this,
+                MainActivity::class.java
+            )
 
         val pendingIntent =
             PendingIntent.getActivity(
@@ -113,16 +169,70 @@ class NovaVoiceService : Service() {
             CHANNEL_ID
         )
             .setContentTitle("NOVA aktív")
-            .setContentText("Háttérben figyelek a „Nova” ébresztőszóra.")
-            .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+            .setContentText(
+                "Háttérben figyelek a „Nova” parancsra."
+            )
+            .setSmallIcon(
+                android.R.drawable.ic_btn_speak_now
+            )
             .setOngoing(true)
-            .setContentIntent(pendingIntent)
-            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .setContentIntent(
+                pendingIntent
+            )
+            .setCategory(
+                NotificationCompat.CATEGORY_SERVICE
+            )
             .build()
     }
 
     // ============================================================
-    // RECOGNIZER
+    // TTS
+    // ============================================================
+
+    override fun onInit(result: Int) {
+
+        if (
+            result ==
+            TextToSpeech.SUCCESS
+        ) {
+
+            val languageResult =
+                tts?.setLanguage(
+                    Locale("hu", "HU")
+                )
+
+            tts?.setSpeechRate(1.0f)
+            tts?.setPitch(1.0f)
+
+            if (
+                languageResult ==
+                TextToSpeech.LANG_MISSING_DATA ||
+                languageResult ==
+                TextToSpeech.LANG_NOT_SUPPORTED
+            ) {
+                // A készüléken nincs magyar TTS.
+            }
+        }
+    }
+
+    private fun speak(
+        text: String
+    ) {
+
+        if (text.isBlank()) {
+            return
+        }
+
+        tts?.speak(
+            text,
+            TextToSpeech.QUEUE_FLUSH,
+            null,
+            "nova-response"
+        )
+    }
+
+    // ============================================================
+    // SPEECH RECOGNIZER
     // ============================================================
 
     private fun createRecognizer() {
@@ -130,15 +240,19 @@ class NovaVoiceService : Service() {
         recognizer?.destroy()
 
         recognizer =
-            SpeechRecognizer.createSpeechRecognizer(this)
+            SpeechRecognizer
+                .createSpeechRecognizer(
+                    applicationContext
+                )
 
         recognizer?.setRecognitionListener(
+
             object : RecognitionListener {
 
                 override fun onReadyForSpeech(
                     params: Bundle?
                 ) {
-                    restarting = false
+                    recognitionStarting = false
                 }
 
                 override fun onBeginningOfSpeech() {
@@ -160,11 +274,18 @@ class NovaVoiceService : Service() {
                 override fun onError(
                     error: Int
                 ) {
+
                     if (!running) {
                         return
                     }
 
-                    restartRecognition(500)
+                    recognitionStarting = false
+
+                    /*
+                     * Ne próbáljuk azonnal újraindítani,
+                     * mert attól könnyen összeakad a recognizer.
+                     */
+                    restartRecognition(700)
                 }
 
                 override fun onResults(
@@ -175,10 +296,13 @@ class NovaVoiceService : Service() {
                         return
                     }
 
+                    recognitionStarting = false
+
                     val heard =
                         results
                             ?.getStringArrayList(
-                                SpeechRecognizer.RESULTS_RECOGNITION
+                                SpeechRecognizer
+                                    .RESULTS_RECOGNITION
                             )
                             ?.firstOrNull()
                             .orEmpty()
@@ -188,12 +312,19 @@ class NovaVoiceService : Service() {
                         handleSpeech(heard)
                     }
 
-                    restartRecognition(400)
+                    restartRecognition(500)
                 }
 
                 override fun onPartialResults(
                     partialResults: Bundle?
                 ) {
+                    /*
+                     * Szándékosan nem indítunk itt parancsot.
+                     *
+                     * A Chrome-fagyás egyik lehetséges oka az,
+                     * ha a partial result közben már elkezdjük
+                     * végrehajtani a parancsot.
+                     */
                 }
 
                 override fun onEvent(
@@ -206,102 +337,115 @@ class NovaVoiceService : Service() {
     }
 
     // ============================================================
-    // START
+    // START LISTENING
     // ============================================================
 
-    private fun startVoiceRecognition() {
+    private fun startListening() {
 
-        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+        if (
+            !SpeechRecognizer
+                .isRecognitionAvailable(
+                    applicationContext
+                )
+        ) {
+            speak(
+                "A beszédfelismerés nem érhető el ezen a készüléken."
+            )
             return
         }
 
         running = true
         novaActivated = false
 
-        restartRecognition(200)
+        restartRecognition(300)
     }
+
+    // ============================================================
+    // RESTART
+    // ============================================================
 
     private fun restartRecognition(
         delay: Long
     ) {
 
-        if (!running || restarting) {
+        if (!running) {
             return
         }
 
-        restarting = true
+        if (recognitionStarting) {
+            return
+        }
 
-        android.os.Handler(
-            mainLooper
-        ).postDelayed(
-            {
+        recognitionStarting = true
 
-                if (!running) {
-                    restarting = false
-                    return@postDelayed
-                }
+        handler.postDelayed({
 
-                try {
+            if (!running) {
 
-                    recognizer?.cancel()
+                recognitionStarting = false
+                return@postDelayed
+            }
 
-                    val intent =
-                        Intent(
-                            RecognizerIntent.ACTION_RECOGNIZE_SPEECH
-                        ).apply {
+            try {
 
-                            putExtra(
-                                RecognizerIntent.EXTRA_LANGUAGE,
-                                "hu-HU"
-                            )
+                recognizer?.cancel()
 
-                            putExtra(
-                                RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE,
-                                "hu-HU"
-                            )
+                val intent =
+                    Intent(
+                        RecognizerIntent
+                            .ACTION_RECOGNIZE_SPEECH
+                    ).apply {
 
-                            putExtra(
-                                RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-                                RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
-                            )
+                        putExtra(
+                            RecognizerIntent
+                                .EXTRA_LANGUAGE,
+                            "hu-HU"
+                        )
 
-                            putExtra(
-                                RecognizerIntent.EXTRA_PARTIAL_RESULTS,
-                                true
-                            )
+                        putExtra(
+                            RecognizerIntent
+                                .EXTRA_LANGUAGE_PREFERENCE,
+                            "hu-HU"
+                        )
 
-                            putExtra(
-                                RecognizerIntent.EXTRA_MAX_RESULTS,
-                                3
-                            )
+                        putExtra(
+                            RecognizerIntent
+                                .EXTRA_LANGUAGE_MODEL,
+                            RecognizerIntent
+                                .LANGUAGE_MODEL_FREE_FORM
+                        )
 
-                            putExtra(
-                                RecognizerIntent.EXTRA_CALLING_PACKAGE,
-                                packageName
-                            )
-                        }
+                        putExtra(
+                            RecognizerIntent
+                                .EXTRA_PARTIAL_RESULTS,
+                            true
+                        )
 
-                    recognizer?.startListening(intent)
-
-                } catch (_: Exception) {
-
-                    restarting = false
-
-                    if (running) {
-                        restartRecognition(1000)
+                        putExtra(
+                            RecognizerIntent
+                                .EXTRA_MAX_RESULTS,
+                            3
+                        )
                     }
 
-                    return@postDelayed
-                }
+                recognizer?.startListening(
+                    intent
+                )
 
-                restarting = false
-            },
-            delay
-        )
+            } catch (_: Exception) {
+
+                recognitionStarting = false
+
+                if (running) {
+                    restartRecognition(1200)
+                }
+            }
+
+        }, delay)
     }
 
     // ============================================================
-    // SPEECH
+    // SPEECH PROCESSING
     // ============================================================
 
     private fun handleSpeech(
@@ -317,7 +461,13 @@ class NovaVoiceService : Service() {
 
         val containsNova =
             Regex("\\bnova\\b")
-                .containsMatchIn(normalized)
+                .containsMatchIn(
+                    normalized
+                )
+
+        // --------------------------------------------------------
+        // ÉBRESZTŐSZÓ
+        // --------------------------------------------------------
 
         if (!novaActivated) {
 
@@ -336,6 +486,11 @@ class NovaVoiceService : Service() {
                     .trim()
 
             if (command.isBlank()) {
+
+                speak(
+                    "Igen?"
+                )
+
                 return
             }
 
@@ -343,6 +498,10 @@ class NovaVoiceService : Service() {
 
             return
         }
+
+        // --------------------------------------------------------
+        // MÁR AKTÍV
+        // --------------------------------------------------------
 
         val command =
             normalized
@@ -353,6 +512,9 @@ class NovaVoiceService : Service() {
                 .trim()
 
         if (command.isBlank()) {
+
+            speak("Igen?")
+
             return
         }
 
@@ -360,7 +522,7 @@ class NovaVoiceService : Service() {
     }
 
     // ============================================================
-    // COMMAND
+    // COMMAND EXECUTION
     // ============================================================
 
     private fun executeCommand(
@@ -378,11 +540,17 @@ class NovaVoiceService : Service() {
             when (result.type) {
 
                 CommandRouter.ResultType.EXECUTED -> {
-                    speak(result.response)
+
+                    speak(
+                        result.response
+                    )
                 }
 
                 CommandRouter.ResultType.UNKNOWN -> {
-                    speak(result.response)
+
+                    speak(
+                        result.response
+                    )
                 }
 
                 CommandRouter.ResultType.AMBIGUOUS -> {
@@ -394,15 +562,21 @@ class NovaVoiceService : Service() {
 
                     speak(
                         if (options.isBlank()) {
+
                             result.response
+
                         } else {
+
                             "${result.response} $options."
                         }
                     )
                 }
 
                 CommandRouter.ResultType.CLARIFICATION -> {
-                    speak(result.response)
+
+                    speak(
+                        result.response
+                    )
                 }
             }
 
@@ -415,64 +589,52 @@ class NovaVoiceService : Service() {
     }
 
     // ============================================================
-    // TTS
-    // ============================================================
-
-    private fun speak(
-        text: String
-    ) {
-
-        if (text.isBlank()) {
-            return
-        }
-
-        val intent =
-            Intent(
-                this,
-                NovaTtsService::class.java
-            ).apply {
-                putExtra(
-                    "text",
-                    text
-                )
-            }
-
-        try {
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-
-                startService(intent)
-
-            } else {
-
-                startService(intent)
-            }
-
-        } catch (_: Exception) {
-        }
-    }
-
-    // ============================================================
     // STOP
     // ============================================================
 
-    private fun stopVoiceRecognition() {
+    private fun stopListening() {
 
         running = false
         novaActivated = false
-        restarting = false
+        recognitionStarting = false
+
+        handler.removeCallbacksAndMessages(
+            null
+        )
+
+        recognizer?.cancel()
+
+        tts?.stop()
+    }
+
+    // ============================================================
+    // DESTROY
+    // ============================================================
+
+    override fun onDestroy() {
+
+        running = false
+        novaActivated = false
+        recognitionStarting = false
+
+        handler.removeCallbacksAndMessages(
+            null
+        )
 
         recognizer?.cancel()
         recognizer?.destroy()
         recognizer = null
-    }
 
-    override fun onDestroy() {
-
-        stopVoiceRecognition()
+        tts?.stop()
+        tts?.shutdown()
+        tts = null
 
         super.onDestroy()
     }
+
+    // ============================================================
+    // BIND
+    // ============================================================
 
     override fun onBind(
         intent: Intent?
